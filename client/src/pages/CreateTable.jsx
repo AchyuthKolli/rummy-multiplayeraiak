@@ -1,60 +1,73 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { ArrowLeft, Users, Trophy, Crown, Copy, Check } from 'lucide-react';
-import { toast } from 'sonner';
-import apiclient from '../apiclient';
-import type { CreateTableRequest } from '../apiclient/data-contracts';
-import { useUser } from '@stackframe/react';
+import React, { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
-interface VariantConfig {
-  id: string;
-  title: string;
-  wildJokerMode: 'no_joker' | 'close_joker' | 'open_joker';
-  description: string;
-  color: string;
-}
+// UI Components
+import { Button } from "../components/ui/button";
+import { Card } from "../components/ui/card";
+import { Input } from "../components/ui/input";
 
-const variantConfigs: Record<string, VariantConfig> = {
+// Icons
+import {
+  ArrowLeft,
+  Users,
+  Trophy,
+  Crown,
+  Copy,
+  Check,
+} from "lucide-react";
+
+// Notifications
+import { toast } from "sonner";
+
+// API Client
+import apiclient from "../apiclient";
+
+// Auth
+import { useUser } from "@stackframe/react";
+
+// -----------------------------
+// Variant Config
+// -----------------------------
+const variantConfigs = {
   no_wildcard: {
-    id: 'no_wildcard',
-    title: 'No Wild Card',
-    wildJokerMode: 'no_joker',
-    description: 'Pure classic rummy with printed jokers only',
-    color: 'from-blue-500 to-cyan-500'
+    id: "no_wildcard",
+    title: "No Wild Card",
+    wildJokerMode: "no_joker",
+    description: "Pure classic rummy with printed jokers only",
+    color: "from-blue-500 to-cyan-500",
   },
   open_wildcard: {
-    id: 'open_wildcard',
-    title: 'Open Wild Card',
-    wildJokerMode: 'open_joker',
-    description: 'Traditional rummy with wild card revealed at start',
-    color: 'from-green-500 to-emerald-500'
+    id: "open_wildcard",
+    title: "Open Wild Card",
+    wildJokerMode: "open_joker",
+    description: "Traditional rummy with wild card revealed at start",
+    color: "from-green-500 to-emerald-500",
   },
   close_wildcard: {
-    id: 'close_wildcard',
-    title: 'Close Wild Card',
-    wildJokerMode: 'close_joker',
-    description: 'Advanced variant - wild card reveals after first sequence',
-    color: 'from-purple-500 to-pink-500'
-  }
+    id: "close_wildcard",
+    title: "Close Wild Card",
+    wildJokerMode: "close_joker",
+    description:
+      "Advanced variant - wild card reveals after first sequence",
+    color: "from-purple-500 to-pink-500",
+  },
 };
 
 export default function CreateTable() {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const user = useUser();
-  const variantId = sp.get('variant') || 'open_wildcard';
-  const variant = variantConfigs[variantId] || variantConfigs.open_wildcard;
 
-  const [playerName, setPlayerName] = useState('Player');
+  const variantId = sp.get("variant") || "open_wildcard";
+  const variant = variantConfigs[variantId];
+
+  const [playerName, setPlayerName] = useState("Player");
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [disqualifyScore, setDisqualifyScore] = useState(200);
-  const [aceValue, setAceValue] = useState<1 | 10>(10);
+  const [aceValue, setAceValue] = useState(10);
   const [creating, setCreating] = useState(false);
-  const [generatedCode, setGeneratedCode] = useState('');
-  const [tableId, setTableId] = useState<string | null>(null);
+  const [generatedCode, setGeneratedCode] = useState("");
+  const [tableId, setTableId] = useState(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -63,286 +76,271 @@ export default function CreateTable() {
     }
   }, [user]);
 
+  // -----------------------------
+  // Create Room
+  // -----------------------------
   const handleCreateRoom = async () => {
     if (!playerName.trim()) {
-      toast.error('Enter your name');
+      toast.error("Enter your name");
       return;
     }
-    
-    // STRICT VALIDATION - prevent constraint violations
+
     if (aceValue !== 1 && aceValue !== 10) {
-      toast.error(`Invalid ace value: ${aceValue}. Please refresh your browser (Ctrl+Shift+R)`);
-      console.error('❌ INVALID ACE VALUE:', aceValue, 'Expected: 1 or 10');
+      toast.error("Invalid Ace Value");
       return;
     }
-    if (!variant.wildJokerMode || variant.wildJokerMode === '') {
-      toast.error('Invalid game mode. Please refresh your browser (Ctrl+Shift+R)');
-      console.error('❌ INVALID WILD JOKER MODE:', variant.wildJokerMode);
+
+    if (!variant.wildJokerMode) {
+      toast.error("Invalid Joker Mode");
       return;
     }
-    
+
     setCreating(true);
     try {
-      const body: CreateTableRequest = {
+      const body = {
         max_players: maxPlayers,
         disqualify_score: disqualifyScore,
         wild_joker_mode: variant.wildJokerMode,
         ace_value: aceValue,
       };
-      
-      // 🔍 DETAILED FRONTEND LOGGING - Check console!
-      console.log('🎯 [CREATE TABLE DEBUG]', {
-        variantId,
-        variantTitle: variant.title,
-        wildJokerMode: variant.wildJokerMode,
-        wildJokerModeType: typeof variant.wildJokerMode,
-        aceValue,
-        aceValueType: typeof aceValue,
-        fullBody: body,
-        timestamp: new Date().toISOString()
-      });
-      
+
       const res = await apiclient.create_table(body);
       const data = await res.json();
-      
+
       setGeneratedCode(data.code);
       setTableId(data.table_id);
-      toast.success('Room created successfully!');
-    } catch (e: any) {
-      console.error('❌ [CREATE TABLE ERROR]', e);
-      const errorMsg = e?.error?.detail || e?.message || 'Failed to create room';
-      toast.error(`Error: ${errorMsg}. Try refreshing (Ctrl+Shift+R)`);
+
+      toast.success("Room Created!");
+    } catch (e) {
+      toast.error("Failed to create room");
     } finally {
       setCreating(false);
     }
   };
 
+  // -----------------------------
+  // Start Game
+  // -----------------------------
   const handleStartGame = () => {
-    if (tableId) {
-      navigate(`/Table?tableId=${tableId}`);
-    }
+    navigate(`/Table?tableId=${tableId}`);
   };
 
+  // -----------------------------
+  // Copy Code
+  // -----------------------------
   const copyToClipboard = () => {
-    if (!generatedCode) return;
     navigator.clipboard.writeText(generatedCode);
     setCopied(true);
-    toast.success('Code copied to clipboard!');
+    toast.success("Code Copied!");
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // -----------------------------
+  // Render: Room Created Screen
+  // -----------------------------
   if (generatedCode && tableId) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-        {/* Header */}
+
         <div className="border-b border-slate-700/50 bg-slate-900/50 backdrop-blur">
           <div className="max-w-3xl mx-auto px-6 py-6">
-            <h1 className="text-3xl font-bold text-white tracking-tight">{variant.title}</h1>
-            <p className="text-slate-400 mt-1">{variant.description}</p>
+            <h1 className="text-3xl font-bold text-white">{variant.title}</h1>
+            <p className="text-slate-400">{variant.description}</p>
           </div>
         </div>
 
         <div className="max-w-3xl mx-auto px-6 py-12">
           <Card className="bg-slate-800/50 border-slate-700 p-8">
+
+            {/* Success */}
             <div className="text-center mb-8">
               <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-500/20 mb-4">
                 <Crown className="w-10 h-10 text-green-400" />
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">Room Created!</h2>
-              <p className="text-slate-400">Share this code with your friends</p>
+              <h2 className="text-2xl font-bold text-white">Room Created!</h2>
+              <p className="text-slate-400">Share the code below</p>
             </div>
 
-            {/* Room Code Display */}
-            <div className="bg-gradient-to-br from-slate-900/80 to-slate-800/80 border-2 border-slate-600 rounded-xl p-8 mb-8">
+            {/* Code Box */}
+            <div className="bg-slate-900/70 border border-slate-600 rounded-xl p-8 mb-8">
               <p className="text-sm text-slate-400 text-center mb-3">Room Code</p>
-              <p className="text-5xl font-bold text-center text-white tracking-wider mb-6 font-mono">
+              <p className="text-5xl text-center text-white font-mono font-bold tracking-wider mb-6">
                 {generatedCode}
               </p>
-              <Button
-                onClick={copyToClipboard}
-                className="w-full bg-slate-700 hover:bg-slate-600 text-white"
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-5 h-5 mr-2" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-5 h-5 mr-2" />
-                    Copy Code
-                  </>
-                )}
+              <Button onClick={copyToClipboard} className="w-full bg-slate-700 hover:bg-slate-600">
+                {copied ? <><Check className="w-5 h-5 mr-2" />Copied</> :
+                  <><Copy className="w-5 h-5 mr-2" />Copy Code</>}
               </Button>
             </div>
 
-            {/* Room Details */}
-            <div className="space-y-3 mb-8 bg-slate-900/50 rounded-lg p-6">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Host:</span>
-                <span className="text-white font-medium">{playerName}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Game Mode:</span>
-                <span className="text-white font-medium">{variant.title}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Max Players:</span>
-                <span className="text-white font-medium">{maxPlayers}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Disqualify Score:</span>
-                <span className="text-white font-medium">{disqualifyScore} pts</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Ace Value:</span>
-                <span className="text-white font-medium">{aceValue} pt{aceValue === 1 ? '' : 's'}</span>
-              </div>
+            {/* Details */}
+            <div className="space-y-3 bg-slate-900/50 rounded-lg p-6 mb-8">
+              <Detail label="Host" value={playerName} />
+              <Detail label="Game Mode" value={variant.title} />
+              <Detail label="Max Players" value={maxPlayers} />
+              <Detail label="Disqualify Score" value={`${disqualifyScore} pts`} />
+              <Detail label="Ace Value" value={`${aceValue} pts`} />
             </div>
 
-            {/* Actions */}
+            {/* Buttons */}
             <div className="flex gap-3">
               <Button
                 onClick={() => {
-                  setGeneratedCode('');
+                  setGeneratedCode("");
                   setTableId(null);
-                  navigate('/');
+                  navigate("/");
                 }}
-                variant="outline"
-                className="flex-1 border-slate-600 text-slate-300 hover:bg-slate-700"
+                className="flex-1 bg-slate-700 hover:bg-slate-600"
               >
                 Cancel
               </Button>
+
               <Button
                 onClick={handleStartGame}
-                className={`flex-1 bg-gradient-to-r ${variant.color} hover:opacity-90 text-white font-semibold`}
+                className={`flex-1 bg-gradient-to-r ${variant.color} text-white font-semibold`}
               >
                 Go to Table
               </Button>
             </div>
+
           </Card>
         </div>
       </div>
     );
   }
 
+  // -----------------------------
+  // Render: Create Room Form
+  // -----------------------------
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Header */}
+
       <div className="border-b border-slate-700/50 bg-slate-900/50 backdrop-blur">
         <div className="max-w-3xl mx-auto px-6 py-6">
+
           <Button
-            onClick={() => navigate('/')}
-            variant="ghost"
+            onClick={() => navigate("/")}
             className="text-slate-400 hover:text-white mb-4"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Game Selection
+            Back
           </Button>
-          <h1 className="text-3xl font-bold text-white tracking-tight">{variant.title}</h1>
-          <p className="text-slate-400 mt-1">{variant.description}</p>
+
+          <h1 className="text-3xl font-bold text-white">{variant.title}</h1>
+          <p className="text-slate-400">{variant.description}</p>
         </div>
       </div>
 
       <div className="max-w-3xl mx-auto px-6 py-12">
         <Card className="bg-slate-800/50 border-slate-700 p-8">
-          <h2 className="text-2xl font-bold text-white mb-6">Create Private Room</h2>
+
+          <h2 className="text-2xl text-white font-bold mb-6">Create Private Room</h2>
 
           <div className="space-y-6">
-            {/* Player Name */}
+
+            {/* Name */}
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Your Name
-              </label>
+              <label className="block text-sm text-slate-300 mb-2">Your Name</label>
               <Input
                 type="text"
                 value={playerName}
                 onChange={(e) => setPlayerName(e.target.value)}
-                placeholder="Enter your name"
-                className="bg-slate-900/50 border-slate-600 text-white placeholder:text-slate-500"
+                className="bg-slate-900/50 border-slate-600 text-white"
               />
             </div>
 
             {/* Max Players */}
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                <Users className="w-4 h-4 inline mr-2" />
-                Maximum Players
-              </label>
-              <select
-                value={maxPlayers}
-                onChange={(e) => setMaxPlayers(Number(e.target.value))}
-                className="w-full px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-slate-500"
-              >
-                <option value={2}>2 Players</option>
-                <option value={3}>3 Players</option>
-                <option value={4}>4 Players</option>
-                <option value={5}>5 Players</option>
-                <option value={6}>6 Players</option>
-              </select>
-            </div>
+            <SelectBox
+              label="Maximum Players"
+              icon={<Users className="inline w-4 h-4 mr-2" />}
+              value={maxPlayers}
+              setValue={setMaxPlayers}
+              options={[2, 3, 4, 5, 6]}
+            />
 
             {/* Disqualification Score */}
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                <Trophy className="w-4 h-4 inline mr-2" />
-                Disqualification Score
-              </label>
-              <select
-                value={disqualifyScore}
-                onChange={(e) => setDisqualifyScore(Number(e.target.value))}
-                className="w-full px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-slate-500"
-              >
-                <option value={200}>200 Points</option>
-                <option value={300}>300 Points</option>
-                <option value={400}>400 Points</option>
-                <option value={500}>500 Points</option>
-                <option value={600}>600 Points</option>
-              </select>
-              <p className="text-xs text-slate-500 mt-1">Players reaching this score will be disqualified</p>
-            </div>
+            <SelectBox
+              label="Disqualification Score"
+              icon={<Trophy className="inline w-4 h-4 mr-2" />}
+              value={disqualifyScore}
+              setValue={setDisqualifyScore}
+              options={[200, 300, 400, 500, 600]}
+            />
 
             {/* Ace Value */}
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-3">
-                Ace Point Value
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setAceValue(1)}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    aceValue === 1
-                      ? `border-transparent bg-gradient-to-r ${variant.color} text-white`
-                      : 'border-slate-600 bg-slate-900/50 text-slate-300 hover:border-slate-500'
-                  }`}
-                >
-                  <div className="text-2xl font-bold">1</div>
-                  <div className="text-xs mt-1 opacity-80">Point</div>
-                </button>
-                <button
-                  onClick={() => setAceValue(10)}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    aceValue === 10
-                      ? `border-transparent bg-gradient-to-r ${variant.color} text-white`
-                      : 'border-slate-600 bg-slate-900/50 text-slate-300 hover:border-slate-500'
-                  }`}
-                >
-                  <div className="text-2xl font-bold">10</div>
-                  <div className="text-xs mt-1 opacity-80">Points</div>
-                </button>
-              </div>
-            </div>
+            <AceSelect aceValue={aceValue} setAceValue={setAceValue} variant={variant} />
 
-            {/* Create Button */}
             <Button
               onClick={handleCreateRoom}
-              disabled={creating || !playerName.trim()}
-              className={`w-full bg-gradient-to-r ${variant.color} hover:opacity-90 text-white font-semibold py-6 text-lg mt-8`}
+              disabled={!playerName.trim() || creating}
+              className={`w-full bg-gradient-to-r ${variant.color} py-6 text-white font-semibold text-lg`}
             >
-              {creating ? 'Creating Room...' : 'Create Room'}
+              {creating ? "Creating..." : "Create Room"}
             </Button>
+
           </div>
         </Card>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------
+// Small Components
+// -----------------------------
+function Detail({ label, value }) {
+  return (
+    <div className="flex justify-between text-sm">
+      <span className="text-slate-400">{label}:</span>
+      <span className="text-white">{value}</span>
+    </div>
+  );
+}
+
+function SelectBox({ label, icon, value, setValue, options }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-slate-300 mb-2">
+        {icon}
+        {label}
+      </label>
+      <select
+        value={value}
+        onChange={(e) => setValue(Number(e.target.value))}
+        className="w-full px-4 py-2 bg-slate-900/50 border border-slate-600 text-white rounded-lg"
+      >
+        {options.map((op) => (
+          <option key={op} value={op}>
+            {op}
+            {label.includes("Players") ? " Players" : " Points"}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function AceSelect({ aceValue, setAceValue, variant }) {
+  return (
+    <div>
+      <label className="block text-sm text-slate-300 mb-3">Ace Point Value</label>
+      <div className="grid grid-cols-2 gap-3">
+        {[1, 10].map((v) => (
+          <button
+            key={v}
+            onClick={() => setAceValue(v)}
+            className={`p-4 rounded-lg border-2 transition-all ${
+              aceValue === v
+                ? `border-transparent bg-gradient-to-r ${variant.color} text-white`
+                : "border-slate-600 bg-slate-900/50 text-slate-300 hover:border-slate-500"
+            }`}
+          >
+            <div className="text-2xl font-bold">{v}</div>
+            <div className="text-xs opacity-80 mt-1">
+              {v === 1 ? "Point" : "Points"}
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );
