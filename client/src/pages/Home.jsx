@@ -168,7 +168,7 @@ export default function Home() {
   onClick={() => navigate("/profile")}
 >
   <img
-    src={user.profilePictureUrl || user.picture || user.profileImageUrl}
+    src={user.profilePictureUrl || user.picture || user.photoUrl}
     className="w-full h-full object-cover"
     alt="profile"
   />
