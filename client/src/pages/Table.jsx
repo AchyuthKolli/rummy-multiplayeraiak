@@ -1,4 +1,15 @@
 /* Table.jsx (patched) */
+import {
+  socket,
+  joinRoom,
+  onGameUpdate,
+  onChatMessage,
+  onVoiceStatus,
+  onDeclareUpdate,
+  onSpectateUpdate,
+} from "../socket";
+
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import apiclient from "../apiclient";
@@ -409,6 +420,49 @@ export default function Table() {
       console.log('User object:', { id: user.id, displayName: user.displayName });
     }
   }, [user]);
+// ===== SOCKET REAL-TIME SYNC ===== //
+useEffect(() => {
+  if (!tableId || !user) return;
+
+  // 1) Join the table room
+  joinRoom(tableId, user.id);
+  console.log("🟢 Joined socket room:", tableId);
+
+  // 2) Game updates (draw, discard, declare)
+  onGameUpdate(() => {
+    console.log("♻️ Real-time game update received");
+    setTimeout(refresh, 150); // ultra-fast 0.15 sec refresh
+  });
+
+  // 3) Declaration broadcast
+  onDeclareUpdate(() => {
+    console.log("🏆 Real-time declare update received");
+    fetchRevealedHands(); // opens scoreboard instantly
+  });
+
+  // 4) Voice mute/unmute
+  onVoiceStatus((data) => {
+    console.log("🎤 Voice update:", data);
+    if (data.userId === user.id) setVoiceMuted(data.muted);
+  });
+
+  // 5) Spectate permission updates
+  onSpectateUpdate((data) => {
+    console.log("👁 Spectate update", data);
+    refresh();
+  });
+
+  return () => {
+    console.log("🔴 Leaving room:", tableId);
+    socket.off("game_update");
+    socket.off("declare_made");
+    socket.off("voice_status");
+    socket.off("spectate_update");
+  };
+
+}, [tableId, user]);
+
+
 
   // Get cards that are placed in slots (not in hand anymore)
   const placedCards = useMemo(() => {
@@ -621,6 +675,9 @@ export default function Table() {
       }
       setHasDrawn(true);
       toast.success("Drew from stock");
+socket.emit("game_update", { tableId });
+
+
     } catch (e: any) {
       console.error('draw stock error', e);
       toast.error("Failed to draw from stock");
@@ -669,6 +726,9 @@ export default function Table() {
       }
       setHasDrawn(true);
       toast.success("Drew from discard pile");
+socket.emit("game_update", { tableId });
+
+
     } catch (e: any) {
       console.error('draw discard error', e);
       toast.error("Failed to draw from discard");
@@ -693,6 +753,9 @@ export default function Table() {
       // Prefer using server response to keep client state in sync
       const data = await res.json();
       toast.success("Card discarded. Next player's turn.");
+socket.emit("game_update", { tableId });
+
+
       setSelectedCard(null);
       setLastDrawnCard(null);
       setHasDrawn(false);
@@ -810,6 +873,8 @@ export default function Table() {
       const res = await apiclient.declare(body);
       if (res.ok) {
         const data = await res.json();
+socket.emit("declare_made", { tableId });
+
         if (data.status === 'valid') {
           toast.success(`🏆 Valid declaration! You win round #${data.round_number} with 0 points!`);
         } else {
