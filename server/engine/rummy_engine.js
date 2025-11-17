@@ -424,3 +424,223 @@ declare(playerId, melds) {
 
   return { ok: true, message: "Valid Declare", scores };
 }
+// -------------------------------------------------------
+// PART 5 — DROP LOGIC + PENALTIES
+// -------------------------------------------------------
+
+handleDrop(userId) {
+    const p = this.players.find(p => p.user_id === userId);
+    if (!p) {
+        return { ok: false, message: "Player not found in this round" };
+    }
+
+    // Player already dropped?
+    if (p.dropped) {
+        return { ok: false, message: "Player already dropped" };
+    }
+
+    let penalty = 0;
+
+    // Case 1: First turn drop → 20 points
+    if (!p.hasDrawn) {
+        penalty = 20;
+    }
+    else {
+        // Case 2: Middle drop → 40 points or 60 by rule
+        penalty = 40;
+    }
+
+    p.dropped = true;
+    p.drop_points = penalty;
+
+    // Add to history
+    this.table.history.push({
+        action: "drop",
+        user_id: userId,
+        round_number: this.table.round_number,
+        penalty,
+        time: new Date().toISOString()
+    });
+
+    // If all players except one drop → auto declare winner
+    const activePlayers = this.players.filter(pl => !pl.dropped);
+
+    if (activePlayers.length === 1) {
+        const winnerId = activePlayers[0].user_id;
+
+        // Auto finish round
+        return this._autoFinishAfterDrops(winnerId);
+    }
+
+    return { ok: true, message: `Player dropped with ${penalty} points` };
+}
+
+
+_autoFinishAfterDrops(winnerId) {
+    const scores = {};
+
+    for (const p of this.players) {
+        if (p.user_id === winnerId) {
+            scores[p.user_id] = 0;
+        }
+        else if (p.dropped) {
+            scores[p.user_id] = p.drop_points;
+        }
+        else {
+            // Should not happen but fallback
+            scores[p.user_id] = 40;
+        }
+    }
+
+    this.table.history.push({
+        action: "round_finished_auto_drop",
+        winner: winnerId,
+        round_number: this.table.round_number,
+        result: scores,
+        time: new Date().toISOString()
+    });
+
+    this.table.status = "round_complete";
+    this.round_over = true;
+
+    return {
+        ok: true,
+        auto_finished: true,
+        winner: winnerId,
+        scores
+    };
+}
+// -------------------------------------------------------
+// PART 6 — ROUND FINISH + NEXT ROUND SETUP
+// -------------------------------------------------------
+
+finishRound(declarerId, userMelds, scoring) {
+    if (this.round_over) {
+        return { ok: false, message: "Round already finished" };
+    }
+
+    const declarer = this.players.find(p => p.user_id === declarerId);
+    if (!declarer) return { ok: false, message: "Declarer not found" };
+
+    // -------------------------------
+    // 1) Validate using scoring.js
+    // -------------------------------
+
+    const { validateHand, calculate_deadwood_points, auto_organize_hand } = scoring;
+
+    const [valid, msg] = validateHand(
+        userMelds,
+        [],
+        this.wild_joker_rank,
+        this.wild_joker_revealed
+    );
+
+    const scores = {};
+
+    // -------------------------------
+    // 2) WRONG SHOW → declarer gets 80
+    // -------------------------------
+    if (!valid) {
+        for (const p of this.players) {
+            if (p.user_id === declarerId) scores[p.user_id] = 80;
+            else scores[p.user_id] = 0;
+        }
+
+        this._storeRoundHistory(declarerId, scores, false, msg);
+
+        this.round_over = true;
+        this.table.status = "round_complete";
+
+        return { ok: true, valid: false, message: msg, scores };
+    }
+
+    // -------------------------------
+    // 3) VALID DECLARE → others get points
+    // -------------------------------
+    scores[declarerId] = 0; // winner gets 0
+
+    for (const p of this.players) {
+        if (p.user_id === declarerId) continue;
+
+        if (p.dropped) {
+            scores[p.user_id] = p.drop_points;
+            continue;
+        }
+
+        // Opponent scoring: auto organize their hand
+        const [melds, leftover] = auto_organize_hand(
+            p.hand,
+            this.wild_joker_rank,
+            this.wild_joker_revealed
+        );
+
+        const deadwood = calculate_deadwood_points(
+            leftover,
+            this.wild_joker_rank,
+            this.wild_joker_revealed
+        );
+
+        scores[p.user_id] = deadwood;
+    }
+
+    // -------------------------------
+    // 4) Store round history
+    // -------------------------------
+    this._storeRoundHistory(declarerId, scores, true, "Valid Show");
+
+    // -------------------------------
+    // 5) Mark round complete
+    // -------------------------------
+    this.round_over = true;
+    this.table.status = "round_complete";
+
+    return { ok: true, valid: true, message: "Valid Show", scores };
+}
+
+
+
+// -------------------------------------------------------
+// PRIVATE: SAVE ROUND RESULTS TO TABLE HISTORY
+// -------------------------------------------------------
+_storeRoundHistory(winnerId, scores, valid, reason) {
+    this.table.history.push({
+        round_number: this.table.round_number,
+        winner: valid ? winnerId : null,
+        reason,
+        valid,
+        result: scores,
+        wild_joker: this.wild_joker_rank,
+        revealed: this.wild_joker_revealed,
+        time: new Date().toISOString()
+    });
+}
+
+
+
+// -------------------------------------------------------
+// PREPARE NEXT ROUND
+// -------------------------------------------------------
+prepareNextRound() {
+    if (!this.round_over) {
+        return { ok: false, message: "Cannot start next round — previous not finished" };
+    }
+
+    this.table.round_number += 1;
+
+    // Reset engine state
+    this.wild_joker_rank = null;
+    this.wild_joker_revealed = false;
+
+    this._initDeck();
+    this._dealCards();
+
+    this.round_over = false;
+    this.table.status = "playing";
+
+    return {
+        ok: true,
+        round_number: this.table.round_number,
+        stock_count: this.stock.length,
+        discard_top: this.discard_top
+    };
+}
