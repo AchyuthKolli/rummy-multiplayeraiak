@@ -5,7 +5,7 @@ class Card {
   constructor(rank, suit = null, joker = false) {
     this.rank = rank;       // "A", "2", ..., "K", "JOKER"
     this.suit = suit;       // "S", "H", "D", "C" or null
-    this.joker = joker;     // true if printed/wild joker
+    this.joker = joker;     // true if printed/wild joker 
   }
 
   code() {
