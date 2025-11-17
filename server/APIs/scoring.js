@@ -1,15 +1,16 @@
 // server/APIs/scoring.js
-// Rummy Scoring Logic — Final, Fully Compatible With New Engine (Option B)
+// FINAL RUMMY SCORING MODULE — Compatible with RummyEngine Option B
 
 const RANK_ORDER = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
 const RANK_POINTS = {
-  "A": 10,  // default unless aceValue=1 is supplied externally
+  "A": 10,
   "K": 10, "Q": 10, "J": 10,
-  "10": 10, "9": 9, "8": 8, "7": 7, "6": 6, "5": 5, "4": 4, "3": 3, "2": 2
+  "10": 10, "9": 9, "8": 8, "7": 7,
+  "6": 6, "5": 5, "4": 4, "3": 3, "2": 2
 };
 
 /* ----------------------------------
-   Utility Extractor
+   Helper Extractor
 ----------------------------------- */
 function _getAttr(card, attr, def = null) {
   if (!card || typeof card !== "object") return def;
@@ -19,10 +20,11 @@ function _getAttr(card, attr, def = null) {
 /* ----------------------------------
    Joker Detection
 ----------------------------------- */
-function isJokerCard(card, wildJokerRank = null, hasWildRevealed = false) {
-  const rank = _getAttr(card, "rank");
-  if (rank === "JOKER") return true;              // Printed joker
-  if (hasWildRevealed && wildJokerRank && rank === wildJokerRank) return true;
+function isJokerCard(card, wildRank = null, revealed = false) {
+  const rank = _getAttr(card,"rank");
+
+  if (rank === "JOKER") return true;              // printed joker
+  if (revealed && wildRank && rank === wildRank) return true; // wild joker AFTER REVEAL
   return false;
 }
 
@@ -31,16 +33,16 @@ function isJokerCard(card, wildJokerRank = null, hasWildRevealed = false) {
 ----------------------------------- */
 function cardPoints(card, aceValue = 10) {
   if (!card) return 0;
-  if (_getAttr(card, "rank") === "JOKER") return 0;
-  const rank = _getAttr(card, "rank");
+  if (_getAttr(card,"rank") === "JOKER") return 0;
 
-  if (rank === "A") return aceValue;    // Ace=1 or 10
+  const rank = _getAttr(card,"rank");
+  if (rank === "A") return aceValue;  // 1 or 10
   return RANK_POINTS[rank] || 0;
 }
 
 function naiveHandPoints(hand = [], aceValue = 10) {
-  const total = hand.reduce((s, c) => s + cardPoints(c, aceValue), 0);
-  return Math.min(total, 80);
+  const total = hand.reduce((s,c)=>s+cardPoints(c,aceValue),0);
+  return Math.min(total,80);
 }
 
 /* ----------------------------------
@@ -49,80 +51,88 @@ function naiveHandPoints(hand = [], aceValue = 10) {
 const rankIndex = (rank) => RANK_ORDER.indexOf(String(rank));
 
 /* ----------------------------------
-   Sequence Check (with jokers)
+   Sequence With Jokers
 ----------------------------------- */
-function isSequence(cards = [], wildJokerRank = null, hasWildRevealed = false) {
+function isSequence(cards = [], wildRank = null, revealed = false) {
   if (!Array.isArray(cards) || cards.length < 3) return false;
 
-  // Suit check for non-jokers
   const suits = cards
-    .filter(c => !isJokerCard(c, wildJokerRank, hasWildRevealed))
-    .map(c => _getAttr(c, "suit"));
+    .filter(c=>!isJokerCard(c,wildRank,revealed))
+    .map(c=>_getAttr(c,"suit"));
+
+  // all non-jokers must match suit
   if (suits.length > 0 && new Set(suits).size > 1) return false;
 
-  const jokerCount = cards.filter(c => isJokerCard(c, wildJokerRank, hasWildRevealed)).length;
-  const nonJokers = cards.filter(c => !isJokerCard(c, wildJokerRank, hasWildRevealed));
+  const jokerCount = cards.filter(c=>isJokerCard(c,wildRank,revealed)).length;
+  const nonJokers = cards.filter(c=>!isJokerCard(c,wildRank,revealed));
+
   if (nonJokers.length < 2) return false;
 
-  const idx = nonJokers.map(c => rankIndex(_getAttr(c, "rank"))).sort((a,b)=>a-b);
+  const idx = nonJokers
+    .map(c=>rankIndex(_getAttr(c,"rank")))
+    .sort((a,b)=>a-b);
 
-  const gapsNeeded = idx.reduce((gaps, v, i) => {
-    if (i === 0) return 0;
+  // gaps between card ranks
+  const gapsNeeded = idx.reduce((gaps,v,i)=>{
+    if (i===0) return 0;
     const gap = v - idx[i-1] - 1;
-    return gaps + Math.max(gap, 0);
-  }, 0);
+    return gaps + Math.max(gap,0);
+  },0);
 
   return gapsNeeded <= jokerCount;
 }
 
 /* ----------------------------------
-   Pure Sequence
+   Pure Sequence (no jokers)
 ----------------------------------- */
-function isPureSequence(cards = [], wildJokerRank = null, hasWildRevealed = false) {
-  if (!isSequence(cards, wildJokerRank, hasWildRevealed)) return false;
+function isPureSequence(cards = [], wildRank = null, revealed = false) {
+  if (!isSequence(cards, wildRank, revealed)) return false;
 
-  // Cannot contain printed jokers
-  if (cards.some(c => _getAttr(c, "rank") === "JOKER")) return false;
+  // printed jokers not allowed ever
+  if (cards.some(c => _getAttr(c,"rank")==="JOKER")) return false;
 
-  // Wild jokers cannot substitute
-  if (hasWildRevealed && wildJokerRank) {
-    if (cards.some(c => _getAttr(c, "rank") === wildJokerRank)) {
-      return false;
-    }
+  // wild jokers also forbidden in pure sequence
+  if (revealed && wildRank) {
+    if (cards.some(c => _getAttr(c,"rank") === wildRank)) return false;
   }
 
-  // Must be strictly consecutive now
-  const idx = cards.map(c => rankIndex(_getAttr(c, "rank"))).sort((a,b)=>a-b);
-  return idx.every((v,i) => i === 0 || v - idx[i-1] === 1);
+  // must be strictly consecutive in rankIndex
+  const idx = cards
+    .map(c=>rankIndex(_getAttr(c,"rank")))
+    .sort((a,b)=>a-b);
+
+  return idx.every((v,i)=>i===0 || v - idx[i-1] === 1);
 }
 
 /* ----------------------------------
-   Sets
+   Set Validation
 ----------------------------------- */
-function isSet(cards = [], wildJokerRank = null, hasWildRevealed = false) {
+function isSet(cards = [], wildRank = null, revealed = false) {
   if (!Array.isArray(cards) || cards.length < 3 || cards.length > 4) return false;
 
-  const nonJokers = cards.filter(c => !isJokerCard(c, wildJokerRank, hasWildRevealed));
+  const nonJokers = cards.filter(c=>!isJokerCard(c,wildRank,revealed));
   if (nonJokers.length < 2) return false;
 
-  const ranks = new Set(nonJokers.map(c => _getAttr(c, "rank")));
-  if (ranks.size !== 1) return false;
+  const ranks = [...new Set(nonJokers.map(c => _getAttr(c,"rank")))];
+  if (ranks.length !== 1) return false;
 
-  const suits = nonJokers.map(c => _getAttr(c,"suit"));
+  // suits must be all different
+  const suits = nonJokers.map(c=>_getAttr(c,"suit"));
   if (new Set(suits).size !== suits.length) return false;
 
   return true;
 }
 
 /* ----------------------------------
-   Full Hand Validation
+   Full Declare Validation
 ----------------------------------- */
-function validateHand(melds = [], leftover = [], wildJokerRank = null, hasWildRevealed = false) {
+function validateHand(melds = [], leftover = [], wildRank = null, revealed = false) {
   if (!Array.isArray(melds) || melds.length === 0)
     return { valid:false, reason:"No melds provided" };
 
-  const total = melds.reduce((s, g) => s + (Array.isArray(g) ? g.length : 0), 0);
-  if (total !== 13) return { valid:false, reason:`Total cards must be 13, got ${total}` };
+  const total = melds.reduce((s,g)=>s+(Array.isArray(g)?g.length:0),0);
+  if (total !== 13)
+    return { valid:false, reason:`Total cards must be 13, got ${total}` };
 
   let hasPure = false;
 
@@ -130,146 +140,142 @@ function validateHand(melds = [], leftover = [], wildJokerRank = null, hasWildRe
     if (!Array.isArray(g) || g.length < 3)
       return { valid:false, reason:"Each meld must have ≥3 cards" };
 
-    const seq  = isSequence(g, wildJokerRank, hasWildRevealed);
-    const pure = isPureSequence(g, wildJokerRank, hasWildRevealed);
-    const set  = isSet(g, wildJokerRank, hasWildRevealed);
+    const seq  = isSequence(g, wildRank, revealed);
+    const pure = isPureSequence(g, wildRank, revealed);
+    const set  = isSet(g, wildRank, revealed);
 
-    if (!(seq || set)) {
+    if (!(seq || set))
       return { valid:false, reason:"Invalid meld detected" };
-    }
+
     if (pure) hasPure = true;
   }
 
-  if (!hasPure) return { valid:false, reason:"At least one pure sequence required" };
+  if (!hasPure)
+    return { valid:false, reason:"At least one pure sequence required" };
 
   return { valid:true, reason:"Valid hand" };
 }
 
 /* ----------------------------------
-   Deadwood Points
+   Deadwood
 ----------------------------------- */
-function calculateDeadwoodPoints(cards = [], wildJokerRank = null, hasWildRevealed = false, aceValue = 10) {
-  const total = cards.reduce((s, c) => {
-    if (isJokerCard(c, wildJokerRank, hasWildRevealed)) return s;
-    return s + cardPoints(c, aceValue);
-  }, 0);
-  return Math.min(total, 80);
+function calculateDeadwoodPoints(cards = [], wildRank = null, revealed = false, aceValue = 10) {
+  const total = cards.reduce((sum,c)=>{
+    if (isJokerCard(c,wildRank,revealed)) return sum;
+    return sum + cardPoints(c,aceValue);
+  },0);
+  return Math.min(total,80);
 }
 
 /* ----------------------------------
-   Combination Generator
+   Combinations
 ----------------------------------- */
 function combinations(arr, k) {
   const out = [];
   const n = arr.length;
 
-  function back(i, temp) {
+  function back(i,temp){
     if (temp.length === k) return out.push(temp.slice());
-    for (let j = i; j < n; j++) {
+    for (let j=i;j<n;j++){
       temp.push(arr[j]);
-      back(j+1, temp);
+      back(j+1,temp);
       temp.pop();
     }
   }
 
-  back(0, []);
+  back(0,[]);
   return out;
 }
 
 /* ----------------------------------
-   Helpers to try forming melds
+   Auto Organize Helper
 ----------------------------------- */
-function tryFormSequence(pool, wildJokerRank, hasWildRevealed) {
-  if (!pool || pool.length < 3) return null;
+function tryFormSequence(pool, wildRank, revealed) {
+  if (pool.length < 3) return null;
 
   for (const size of [4,3]) {
     if (pool.length < size) continue;
-    for (const combo of combinations(pool, size)) {
-      if (isSequence(combo, wildJokerRank, hasWildRevealed)) return combo;
+
+    for (const combo of combinations(pool,size)) {
+      if (isSequence(combo,wildRank,revealed)) return combo;
     }
   }
+
   return null;
 }
 
-function tryFormSet(pool, wildJokerRank, hasWildRevealed) {
-  if (!pool || pool.length < 3) return null;
+function tryFormSet(pool, wildRank, revealed) {
+  if (pool.length < 3) return null;
 
   for (const size of [4,3]) {
     if (pool.length < size) continue;
-    for (const combo of combinations(pool, size)) {
-      if (isSet(combo, wildJokerRank, hasWildRevealed)) return combo;
+
+    for (const combo of combinations(pool,size)) {
+      if (isSet(combo,wildRank,revealed)) return combo;
     }
   }
+
   return null;
 }
 
 /* ----------------------------------
-   Auto Organize Hand (Opponent Scoring)
+   Auto Organize Hand (Opponent scoring)
 ----------------------------------- */
-function autoOrganizeHand(hand = [], wildJokerRank = null, hasWildRevealed = false) {
-  if (!Array.isArray(hand)) return { melds: [], leftover: [] };
+function autoOrganizeHand(hand = [], wildRank = null, revealed = false) {
+  if (!Array.isArray(hand)) return { melds:[], leftover:[] };
 
   let remaining = hand.slice();
   const melds = [];
 
-  // pure seq first
+  // PURE sequence first
   while (remaining.length >= 3) {
-    const seq = tryFormSequence(remaining, wildJokerRank, hasWildRevealed);
-    if (!seq || !isPureSequence(seq, wildJokerRank, hasWildRevealed)) break;
+    const seq = tryFormSequence(remaining,wildRank,revealed);
+    if (!seq || !isPureSequence(seq,wildRank,revealed)) break;
 
     melds.push(seq);
-    seq.forEach(c => {
-      const i = remaining.indexOf(c);
-      if (i !== -1) remaining.splice(i,1);
-    });
+    seq.forEach(c=>remaining.splice(remaining.indexOf(c),1));
   }
 
-  // then impure sequences
+  // IMPURE sequences
   while (remaining.length >= 3) {
-    const seq = tryFormSequence(remaining, wildJokerRank, hasWildRevealed);
+    const seq = tryFormSequence(remaining,wildRank,revealed);
     if (!seq) break;
 
     melds.push(seq);
-    seq.forEach(c => {
-      const i = remaining.indexOf(c);
-      if (i !== -1) remaining.splice(i,1);
-    });
+    seq.forEach(c=>remaining.splice(remaining.indexOf(c),1));
   }
 
-  // then sets
+  // Sets
   while (remaining.length >= 3) {
-    const set = tryFormSet(remaining, wildJokerRank, hasWildRevealed);
+    const set = tryFormSet(remaining,wildRank,revealed);
     if (!set) break;
 
     melds.push(set);
-    set.forEach(c => {
-      const i = remaining.indexOf(c);
-      if (i !== -1) remaining.splice(i,1);
-    });
+    set.forEach(c=>remaining.splice(remaining.indexOf(c),1));
   }
 
-  return { melds, leftover: remaining };
+  return { melds, leftover:remaining };
 }
 
 /* ----------------------------------
-   Organize hand (UI use)
+   Organize for UI Display
 ----------------------------------- */
-function organizeHandByMelds(hand = [], wildJokerRank = null, hasWildRevealed = false) {
-  if (!Array.isArray(hand)) {
-    return { pure_sequences: [], impure_sequences: [], sets: [], ungrouped: [] };
-  }
+function organizeHandByMelds(hand = [], wildRank = null, revealed = false) {
+  if (!Array.isArray(hand))
+    return { pure_sequences:[], impure_sequences:[], sets:[], ungrouped:[] };
 
   let remaining = hand.slice();
-  const pure = [], impure = [], sets = [];
+  const pure=[], impure=[], setsArr=[];
 
   function find(type) {
     if (remaining.length < 3) return null;
     for (const size of [4,3]) {
       if (remaining.length < size) continue;
-      for (const combo of combinations(remaining, size)) {
-        if (type === "pure_seq" && isPureSequence(combo, wildJokerRank, hasWildRevealed)) return combo;
-        if (type === "impure_seq" && isSequence(combo, wildJokerRank, hasWildRevealed) && !isPureSequence(combo, wildJokerRank, hasWildRevealed)) return combo;
-        if (type === "set" && isSet(combo, wildJokerRank, hasWildRevealed)) return combo;
+
+      for (const combo of combinations(remaining,size)) {
+        if (type==="pure"  && isPureSequence(combo,wildRank,revealed)) return combo;
+        if (type==="seq"   && isSequence(combo,wildRank,revealed) && !isPureSequence(combo,wildRank,revealed)) return combo;
+        if (type==="set"   && isSet(combo,wildRank,revealed)) return combo;
       }
     }
     return null;
@@ -277,34 +283,31 @@ function organizeHandByMelds(hand = [], wildJokerRank = null, hasWildRevealed = 
 
   let m;
 
-  // pure
-  while ((m = find("pure_seq"))) {
+  while ((m = find("pure"))) {
     pure.push(m);
     m.forEach(c => remaining.splice(remaining.indexOf(c),1));
   }
 
-  // impure
-  while ((m = find("impure_seq"))) {
+  while ((m = find("seq"))) {
     impure.push(m);
     m.forEach(c => remaining.splice(remaining.indexOf(c),1));
   }
 
-  // sets
   while ((m = find("set"))) {
-    sets.push(m);
+    setsArr.push(m);
     m.forEach(c => remaining.splice(remaining.indexOf(c),1));
   }
 
   return {
     pure_sequences: pure,
     impure_sequences: impure,
-    sets,
+    sets: setsArr,
     ungrouped: remaining
   };
 }
 
 /* ----------------------------------
-   EXPORTS — includes legacy + engine names
+   EXPORTS
 ----------------------------------- */
 module.exports = {
   isJokerCard,
