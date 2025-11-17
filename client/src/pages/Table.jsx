@@ -451,6 +451,12 @@ useEffect(() => {
     console.log("👁 Spectate update", data);
     refresh();
   });
+// 6) Chat message listener (join, leave, messages)
+onChatMessage((msg) => {
+  console.log("💬 Chat:", msg);
+});
+
+
 
   return () => {
     console.log("🔴 Leaving room:", tableId);
@@ -676,6 +682,9 @@ useEffect(() => {
       setHasDrawn(true);
       toast.success("Drew from stock");
 socket.emit("game_update", { tableId });
+setTimeout(refresh, 120);
+
+
 
 
     } catch (e: any) {
@@ -727,6 +736,9 @@ socket.emit("game_update", { tableId });
       setHasDrawn(true);
       toast.success("Drew from discard pile");
 socket.emit("game_update", { tableId });
+setTimeout(refresh, 120);
+
+
 
 
     } catch (e: any) {
@@ -754,6 +766,9 @@ socket.emit("game_update", { tableId });
       const data = await res.json();
       toast.success("Card discarded. Next player's turn.");
 socket.emit("game_update", { tableId });
+setTimeout(refresh, 120);
+
+
 
 
       setSelectedCard(null);
