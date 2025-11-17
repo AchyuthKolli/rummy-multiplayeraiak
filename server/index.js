@@ -4,10 +4,13 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
+const http = require("http");
+const socketIO = require("socket.io");
 const dotenv = require("dotenv");
 dotenv.config();
 
 const { requireAuth } = require("./auth");
+const applySocketHandlers = require("./sockethandlers");   // ✅ IMPORTANT
 
 const app = express();
 app.use(cors());
@@ -25,10 +28,8 @@ if (fs.existsSync(apisDir)) {
     try {
       const routerPath = path.join(apisDir, file);
       const mod = require(routerPath);
-      // The old python files are not valid JS — make sure server/APIs contains JS routers.
-      // Expect each file to export an Express Router as `module.exports = router;`
+
       if (mod && mod.router) {
-        // if module exports { router }, mount it
         app.use("/api", mod.router);
         console.log("Mounted router (router exported prop):", file);
       } else if (mod && mod instanceof express.Router) {
@@ -38,7 +39,6 @@ if (fs.existsSync(apisDir)) {
         app.use("/api", mod.default);
         console.log("Mounted router (router default export):", file);
       } else {
-        // Try to mount it as a function that accepts (app, requireAuth)
         if (typeof mod === "function") {
           mod(app, requireAuth);
           console.log("Mounted API function:", file);
@@ -54,12 +54,26 @@ if (fs.existsSync(apisDir)) {
   console.warn("No server/APIs directory found to load routers from");
 }
 
-// Example protected route (you can remove later)
+// Example protected route
 app.get("/api/me", requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
+// =====================================================
+// 🚀 CREATE HTTP SERVER + SOCKET.IO SERVER
+// =====================================================
+const server = http.createServer(app);
+const io = socketIO(server, {
+  cors: { origin: "*" }
+});
+
+// Attach all socket handlers (your full rummy logic)
+applySocketHandlers(io);
+
+// =====================================================
+// 🚀 START SERVER (Express + Socket.io)
+// =====================================================
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server listening on http://localhost:${PORT} (env ${process.env.NODE_ENV || "dev"})`);
+server.listen(PORT, () => {
+  console.log(`🔥 Server + Socket.IO running at http://localhost:${PORT}`);
 });
