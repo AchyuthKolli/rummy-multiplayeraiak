@@ -86,3 +86,40 @@
   .ak-letter { font-size:32px; }
   .ak-main { padding: 0 18px 60px; }
 }
+@keyframes eye-blink {
+  0%, 90% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+  100% { transform: scaleY(1); }
+}
+
+.animate-blink {
+  animation: eye-blink 3s infinite;
+}
+
+@keyframes eye-move {
+  0%,100% { transform: translateX(0); }
+  50% { transform: translateX(3px); }
+}
+
+.animate-eye-move {
+  animation: eye-move 2.2s infinite ease-in-out;
+}
+
+@keyframes logo-pop {
+  0% { transform: scale(0.95); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+.animate-logo-pop {
+  animation: logo-pop 1.2s ease-out;
+}
+
+@keyframes smile-pop {
+  0% { transform: scaleX(0.3); opacity: 0; }
+  100% { transform: scaleX(1); opacity: 1; }
+}
+
+.animate-smile {
+  animation: smile-pop 1.2s ease-out 0.3s both;
+}
