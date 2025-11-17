@@ -20,6 +20,14 @@ import HistoryTable from "../games/rummy/components/HistoryTable";
 import ChatSidebar from "../games/rummy/components/ChatSidebar";
 import VoicePanel from "../games/rummy/components/VoicePanel";
 import SpectateControlsLocal from "../games/rummy/components/SpectateControls"; // fallback if needed
+import initCursorSpark from "../utils/cursor-spark";
+
+useEffect(() => {
+  const stop = initCursorSpark({ color: "rgba(120,220,255,0.9)" });
+  return () => stop();
+}, []);
+
+
 
 // small helper to promisify socket ack calls
 function requestSocket(event, payload = {}, timeout = 8000) {
