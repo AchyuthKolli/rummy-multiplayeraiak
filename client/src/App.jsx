@@ -5,6 +5,8 @@ import Home from "./pages/Home";
 import CreateTable from "./pages/CreateTable";
 import Table from "./pages/Table";
 import Profile from "./pages/Profile";
+import { useNavigate } from "react-router-dom";
+
 
 export default function App() {
   const navigate = useNavigate();
