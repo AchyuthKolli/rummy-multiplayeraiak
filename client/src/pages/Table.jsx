@@ -556,6 +556,12 @@ onChatMessage((msg) => {
       console.log('🔄 Refresh:', { prevActiveUser: info?.active_user_id, newActiveUser: data.active_user_id, turnChanged });
 
       setInfo(data);
+// 🔥 Ensure wildcard stays visible permanently after reveal
+if (data.wild_joker_rank) {
+  setRevealedWildJoker(data.wild_joker_rank);
+}
+
+
       if (data.status === "playing") {
         const r: GetRoundMeParams = { table_id: tableId };
         const rr = await apiclient.get_round_me(r);
@@ -1150,6 +1156,13 @@ socket.emit("declare_made", { tableId });
                       <p className="text-sm text-muted-foreground">Room Code</p>
                       <p className="text-2xl font-bold tracking-wider text-green-400">{info.code}</p>
                     </div>
+{revealedWildJoker && (
+  <div className="mt-2 px-3 py-1 bg-yellow-900/30 border border-yellow-500/40 rounded-lg text-yellow-300 font-bold text-lg">
+    Wild Joker: {revealedWildJoker}
+  </div>
+)}
+
+
                     <button onClick={onCopy} className="inline-flex items-center gap-2 px-3 py-2 bg-green-800 text-green-100 rounded-lg hover:bg-green-700">
                       {copied ? (<><Check className="w-4 h-4"/> Copied</>) : (<><Copy className="w-4 h-4"/> Copy</>)}
                     </button>
