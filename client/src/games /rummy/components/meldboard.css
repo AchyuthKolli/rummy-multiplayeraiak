@@ -1,22 +1,29 @@
+/* --------------------------------------------------
+   MELDBOARD — Final Production Dark UI
+   Supports: Desktop + Mobile
+---------------------------------------------------*/
+
 /* -------------------------------
    Main Container
 --------------------------------*/
 .meld-board-container {
   width: 100%;
   margin-top: 15px;
-  padding: 10px;
-  background: rgba(20, 22, 40, 0.6);
-  border: 1px solid rgba(255,255,255,0.05);
-  border-radius: 10px;
+  padding: 16px;
+  background: rgba(18, 20, 35, 0.85);
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 12px;
+  box-shadow: 0 0 12px rgba(0,0,0,0.4);
+  backdrop-filter: blur(6px);
 }
 
 /* -------------------------------
-   Rows (3 melds + 1 meld + leftover)
+   Rows (3 melds + 1 meld row)
 --------------------------------*/
 .meld-row {
   display: flex;
   gap: 15px;
-  margin-bottom: 15px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
@@ -26,16 +33,16 @@
 .meld-box {
   flex: 1;
   min-width: 260px;
-  background: rgba(40, 44, 60, 0.7);
-  border: 1px dashed rgba(120,120,160,0.4);
-  border-radius: 8px;
-  padding: 10px;
-  position: relative;
-  transition: 0.2s ease;
+  background: rgba(35, 38, 60, 0.9);
+  border: 1px dashed rgba(160,160,220,0.35);
+  border-radius: 10px;
+  padding: 12px;
+  transition: border-color 0.2s ease, transform 0.15s ease;
 }
 
 .meld-box:hover {
-  border-color: rgba(180,180,250,0.7);
+  border-color: rgba(200,200,255,0.65);
+  transform: translateY(-1px);
 }
 
 /* -------------------------------
@@ -44,27 +51,33 @@
 .meld-header {
   display: flex;
   justify-content: space-between;
-  font-size: 14px;
-  margin-bottom: 6px;
-  color: #a8b3ff;
+  font-size: 15px;
+  margin-bottom: 8px;
+  color: #9eb7ff;
+  font-weight: 500;
 }
 
 .lock-btn {
-  background: transparent;
-  border: 1px solid #444;
-  padding: 2px 6px;
-  border-radius: 5px;
-  color: #ccc;
+  background: rgba(120,120,160,0.15);
+  border: 1px solid rgba(150,150,200,0.4);
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: #e3e3e3;
   cursor: pointer;
+  font-size: 14px;
 }
 
 .lock-btn:hover {
-  border-color: #aaa;
+  background: rgba(160,160,210,0.25);
+  border-color: rgba(200,200,255,0.6);
 }
 
-.lock-btn:disabled {
-  opacity: 0.4;
+.lock-btn:disabled,
+.lock-btn.locked {
+  background: rgba(120,120,160,0.35);
+  border-color: rgba(160,160,220,0.5);
   cursor: not-allowed;
+  opacity: 0.7;
 }
 
 /* -------------------------------
@@ -72,76 +85,91 @@
 --------------------------------*/
 .meld-cards {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 .meld-slot {
-  width: 55px;
-  height: 80px;
-  border: 1px dashed rgba(255,255,255,0.2);
-  border-radius: 6px;
+  width: 60px;
+  height: 84px;
+  border: 1px dashed rgba(255,255,255,0.18);
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(3px);
+  background: rgba(255,255,255,0.02);
+  transition: background 0.15s ease;
+  overflow: hidden;
 }
 
 .meld-slot:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255,255,255,0.06);
 }
 
-/* Number in empty slot */
+/* Empty slot number */
 .empty-slot {
-  color: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.22);
   font-size: 16px;
+  user-select: none;
 }
 
 /* -------------------------------
    Leftover Box
 --------------------------------*/
 .leftover-box {
-  background: rgba(20, 22, 40, 0.6);
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px dashed rgba(120,120,160,0.4);
+  background: rgba(18, 20, 40, 0.85);
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px dashed rgba(160,160,220,0.35);
 }
 
-.left-head {
+/* Header + Green Button */
+.leftover-header, .left-head {
   display: flex;
   justify-content: space-between;
-  font-size: 14px;
-  color: #7bb2ff;
+  font-size: 15px;
+  color: #7cb8ff;
   margin-bottom: 10px;
+  font-weight: 500;
 }
 
-/* Green pure-lock */
+/* GREEN PURE-LOCK button */
 .seq-lock-btn {
-  background: rgba(20, 70, 20, 0.8);
-  border: 1px solid rgba(50, 150, 50, 0.8);
-  color: #baffc2;
-  padding: 4px 10px;
+  background: rgba(30, 90, 30, 0.85);
+  border: 1px solid rgba(60, 170, 60, 0.8);
+  color: #c7ffd4;
+  padding: 5px 12px;
   border-radius: 6px;
   cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s ease, transform 0.1s ease;
 }
 
 .seq-lock-btn:hover {
-  background: rgba(30, 100, 30, 0.9);
+  background: rgba(40, 120, 40, 0.95);
+  transform: translateY(-1px);
+}
+
+.seq-lock-btn.on {
+  background: rgba(70, 160, 70, 0.95);
+  border-color: rgba(80, 190, 80, 1);
 }
 
 .seq-lock-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
-/* Cards in leftover */
+/* -------------------------------
+   Leftover Cards
+--------------------------------*/
 .leftover-cards {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 /* -------------------------------
-   Responsive Design (Phone)
+   RESPONSIVE DESIGN
 --------------------------------*/
 @media (max-width: 768px) {
   .meld-row {
@@ -153,22 +181,22 @@
   }
 
   .meld-slot {
-    width: 48px;
-    height: 70px;
+    width: 54px;
+    height: 76px;
   }
 }
 
-@media (max-width: 500px) {
+@media (max-width: 480px) {
   .meld-slot {
-    width: 44px;
-    height: 65px;
+    width: 48px;
+    height: 70px;
   }
 
   .meld-cards {
-    gap: 5px;
+    gap: 7px;
   }
 
   .leftover-cards {
-    gap: 4px;
+    gap: 6px;
   }
 }
