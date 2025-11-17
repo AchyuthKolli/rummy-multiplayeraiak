@@ -16,23 +16,28 @@ import apiclient from "../apiclient";
 import type { GetTableInfoParams, TableInfoResponse, StartGameRequest, GetRoundMeParams, RoundMeResponse, DrawRequest, DiscardRequest, DiscardCard, DeclareRequest, ScoreboardResponse, RoundScoreboardParams, GetRevealedHandsParams, RevealedHandsResponse, LockSequenceRequest, GrantSpectateRequest } from "../apiclient/data-contracts";
 import { Copy, Check, Crown, User2, Play, ArrowDown, Trash2, Trophy, X, ChevronDown, ChevronUp, LogOut, Mic, MicOff, UserX, Eye } from "lucide-react";
 import { toast } from "sonner";
-import { HandStrip } from "components/HandStrip";
-import { useUser } from "@stackframe/react";
-import { TableDiagram } from "components/TableDiagram";
-import { GameRules } from 'components/GameRules';
-import { CasinoTable3D } from 'components/CasinoTable3D';
-import { PlayerProfile } from 'components/PlayerProfile';
-import { PlayingCard } from "components/PlayingCard";
-import { Button } from "@/components/ui/button";
-import { ScoreboardModal } from "components/ScoreboardModal";
-import { WildJokerRevealModal } from "components/WildJokerRevealModal";
-import { PointsTable } from "components/PointsTable";
-import { parseCardCode } from "utils/cardCodeUtils";
-import ChatSidebar from "components/ChatSidebar";
-import VoicePanel from 'components/VoicePanel';
-import SpectateControls from 'components/SpectateControls';
-import HistoryTable from 'components/HistoryTable';
+// ✅ ALL RUMMY COMPONENTS NOW UNDER games/rummy/
+import { HandStrip } from "../games/rummy/components/HandStrip";
+import { TableDiagram } from "../games/rummy/components/TableDiagram";
+import { CasinoTable3D } from "../games/rummy/components/CasinoTable3D";
+import { PlayerProfile } from "../games/rummy/components/PlayerProfile";
+import { PlayingCard } from "../games/rummy/components/PlayingCard";
+import { GameRules } from "../games/rummy/components/GameRules";
+import { ScoreboardModal } from "../games/rummy/components/ScoreboardModal";
+import { WildJokerRevealModal } from "../games/rummy/components/WildJokerRevealModal";
+import { PointsTable } from "../games/rummy/components/PointsTable";
+import SpectateControls from "../games/rummy/components/SpectateControls";
+import HistoryTable from "../games/rummy/components/HistoryTable";
 
+import ChatSidebar from "../games/rummy/components/ChatSidebar";
+import VoicePanel from "../games/rummy/components/VoicePanel";
+
+// utilities
+import { parseCardCode } from "../utils/cardCodeUtils";
+
+// ui
+import { Button } from "@/components/ui/button";
+import { useUser } from "@stackframe/react";
 // CardBack component with red checkered pattern
 const CardBack = ({ className = "" }: { className?: string }) => (
   <div className={`relative bg-white rounded-lg border-2 border-gray-300 shadow-lg ${className}`}>
