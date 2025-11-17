@@ -123,3 +123,37 @@ router.get("/chat/messages", requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+// server/APIs/chat.js
+const express = require("express");
+const router = express.Router();
+const { fetch, fetchrow, execute } = require("../../server/db"); // adjust path if needed
+const { requireAuth } = require("../../server/auth");
+
+// Simple send message
+router.post("/chat/send", requireAuth, async (req, res) => {
+  try {
+    const { table_id, message, is_private = false, recipient_id = null } = req.body;
+    const userId = req.user.id;
+    // NOTE: Add table membership checks similar to your python code
+    const q = `INSERT INTO chat_messages (table_id, user_id, message, is_private, recipient_id, created_at)
+               VALUES ($1, $2, $3, $4, $5, now()) RETURNING id, table_id, user_id, message, is_private, recipient_id, created_at`;
+    const row = await fetchrow(q, table_id, userId, message, is_private, recipient_id);
+    return res.json({
+      id: row.id,
+      table_id: row.table_id,
+      user_id: row.user_id,
+      sender_name: req.user.name,
+      message: row.message,
+      is_private: row.is_private,
+      recipient_id: row.recipient_id,
+      created_at: row.created_at,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Internal error" });
+  }
+});
+
+module.exports = router;
+
+
