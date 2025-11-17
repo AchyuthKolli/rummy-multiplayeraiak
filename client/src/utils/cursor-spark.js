@@ -1,85 +1,107 @@
 // client/src/utils/cursor-spark.js
-// simple cursor particle + click ripple manager (no external deps)
+// Lightweight cursor sparkle trail. No deps. Call initCursorSpark() to start.
+// Places a canvas overlay and draws small particle trail on pointer movement.
 
-let pointerHandler, clickHandler, particles = [];
-let rafId = null;
+export default function initCursorSpark(opts = {}) {
+  const color = opts.color || "rgba(160, 255, 200, 0.95)";
+  const count = opts.count || 14;
+  const size = opts.size || 6;
+  const decay = opts.decay || 0.02;
 
-export function initCursorSparks() {
-  if (typeof window === "undefined") return;
-  const root = document;
-  pointerHandler = (e) => {
-    spawnParticle(e.clientX, e.clientY);
-  };
-  clickHandler = (e) => {
-    spawnRipple(e.clientX, e.clientY);
-  };
-  root.addEventListener("pointermove", pointerHandler);
-  root.addEventListener("click", clickHandler);
-  tick();
-}
+  if (typeof window === "undefined") return () => {};
 
-export function destroyCursorSparks() {
-  document.removeEventListener("pointermove", pointerHandler);
-  document.removeEventListener("click", clickHandler);
-  if (rafId) cancelAnimationFrame(rafId);
-  particles.forEach(p => p.el && p.el.remove());
-  particles = [];
-}
+  // avoid double-init
+  if (window.__AK_CURSOR_SPARK_INITED) return () => {};
+  window.__AK_CURSOR_SPARK_INITED = true;
 
-function spawnParticle(x, y) {
-  // small rare sparkles to avoid perf cost
-  if (Math.random() > 0.22) return;
-  const el = document.createElement("div");
-  el.style.position = "fixed";
-  el.style.left = x + "px";
-  el.style.top = y + "px";
-  el.style.pointerEvents = "none";
-  el.style.width = el.style.height = "6px";
-  el.style.borderRadius = "50%";
-  el.style.background = `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), rgba(0,0,0,0))`;
-  el.style.transform = `translate(-50%,-50%) scale(${0.5 + Math.random()})`;
-  el.style.opacity = "1";
-  el.style.zIndex = "9999";
-  document.body.appendChild(el);
+  const canvas = document.createElement("canvas");
+  canvas.style.position = "fixed";
+  canvas.style.left = "0";
+  canvas.style.top = "0";
+  canvas.style.pointerEvents = "none";
+  canvas.style.zIndex = "999999";
+  canvas.style.mixBlendMode = "screen";
+  canvas.className = "ak-cursor-spark-canvas";
+  document.body.appendChild(canvas);
 
-  particles.push({
-    type: "spark",
-    el,
-    x,
-    y,
-    life: 220 + Math.random() * 260,
-    vx: (Math.random() - 0.5) * 0.8,
-    vy: - (0.2 + Math.random() * 0.6),
-  });
-}
+  const ctx = canvas.getContext("2d");
+  let w = (canvas.width = window.innerWidth);
+  let h = (canvas.height = window.innerHeight);
 
-function spawnRipple(x, y) {
-  const el = document.createElement("div");
-  el.className = "cursor-ripple";
-  el.style.left = x + "px";
-  el.style.top = y + "px";
-  el.style.width = el.style.height = "26px";
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 700);
-}
+  const particles = [];
 
-function tick(time) {
-  for (let i = particles.length -1; i >= 0; i--) {
-    const p = particles[i];
-    if (!p) continue;
-    p.life -= 16;
-    p.x += p.vx;
-    p.y += p.vy;
-    if (p.el) {
-      p.el.style.left = p.x + "px";
-      p.el.style.top = p.y + "px";
-      p.el.style.opacity = Math.max(0, p.life / 400).toString();
-      p.el.style.transform = `translate(-50%,-50%) scale(${1 - (1 - p.life/400)})`;
-    }
-    if (p.life <= 0) {
-      if (p.el) p.el.remove();
-      particles.splice(i, 1);
-    }
+  function resize() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
   }
-  rafId = requestAnimationFrame(tick);
+  window.addEventListener("resize", resize);
+
+  function addParticle(x, y) {
+    const a = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 2 + 0.2;
+    particles.push({
+      x,
+      y,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed,
+      life: 1,
+      size: (Math.random() * 0.6 + 0.6) * size,
+      color,
+    });
+    if (particles.length > 300) particles.splice(0, particles.length - 300);
+  }
+
+  let mouse = { x: -9999, y: -9999, movedAt: 0 };
+  function onMove(e) {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.movedAt = Date.now();
+    for (let i = 0; i < Math.floor(Math.random() * 2) + 1; i++) addParticle(mouse.x, mouse.y);
+  }
+
+  function onClick(e) {
+    for (let i = 0; i < (count * 2); i++) addParticle(e.clientX, e.clientY);
+  }
+
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("pointerdown", onClick);
+
+  let raf = null;
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.98;
+      p.vy *= 0.98;
+      p.life -= decay;
+      const alpha = Math.max(0, Math.min(1, p.life));
+      ctx.beginPath();
+      ctx.fillStyle = p.color.replace(/[\d\.]+\)$/g, `${alpha})`);
+      // if color is rgba() and lacks alpha replacement, fallback:
+      if (!/rgba\(/.test(p.color)) ctx.fillStyle = `rgba(160,255,200,${alpha})`;
+      ctx.arc(p.x, p.y, Math.max(0.5, p.size * alpha), 0, Math.PI * 2);
+      ctx.fill();
+
+      if (p.life <= 0 || p.x < -50 || p.y < -50 || p.x > w + 50 || p.y > h + 50) {
+        particles.splice(i, 1);
+      }
+    }
+
+    raf = requestAnimationFrame(draw);
+  }
+
+  raf = requestAnimationFrame(draw);
+
+  // Return stop function
+  return function stop() {
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("pointerdown", onClick);
+    window.removeEventListener("resize", resize);
+    if (raf) cancelAnimationFrame(raf);
+    if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);
+    window.__AK_CURSOR_SPARK_INITED = false;
+  };
 }
