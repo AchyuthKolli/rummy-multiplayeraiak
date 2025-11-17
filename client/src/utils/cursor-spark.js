@@ -1,107 +1,89 @@
-// client/src/utils/cursor-spark.js
-// Lightweight cursor sparkle trail. No deps. Call initCursorSpark() to start.
-// Places a canvas overlay and draws small particle trail on pointer movement.
+// cursor-spark.js
+// Lightweight cursor sparkle effect.
+// Usage: import { initCursorSpark } from '../utils/cursor-spark'; initCursorSpark();
 
-export default function initCursorSpark(opts = {}) {
-  const color = opts.color || "rgba(160, 255, 200, 0.95)";
-  const count = opts.count || 14;
-  const size = opts.size || 6;
-  const decay = opts.decay || 0.02;
+let mounted = false;
+export function initCursorSpark({ particleCount = 8, sparkleColor = "#fef3c7" } = {}) {
+  if (mounted) return;
+  mounted = true;
 
-  if (typeof window === "undefined") return () => {};
-
-  // avoid double-init
-  if (window.__AK_CURSOR_SPARK_INITED) return () => {};
-  window.__AK_CURSOR_SPARK_INITED = true;
-
-  const canvas = document.createElement("canvas");
-  canvas.style.position = "fixed";
-  canvas.style.left = "0";
-  canvas.style.top = "0";
-  canvas.style.pointerEvents = "none";
-  canvas.style.zIndex = "999999";
-  canvas.style.mixBlendMode = "screen";
-  canvas.className = "ak-cursor-spark-canvas";
-  document.body.appendChild(canvas);
-
-  const ctx = canvas.getContext("2d");
-  let w = (canvas.width = window.innerWidth);
-  let h = (canvas.height = window.innerHeight);
+  // small, performance-friendly implementation
+  const styleEl = document.createElement("style");
+  styleEl.id = "cursor-spark-styles";
+  styleEl.innerHTML = `
+    .__cspark {
+      position: fixed;
+      pointer-events: none;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 0;
+      transition: transform 300ms ease-out, opacity 300ms ease-out;
+      z-index: 99999999;
+      will-change: transform, opacity;
+    }
+  `;
+  document.head.appendChild(styleEl);
 
   const particles = [];
-
-  function resize() {
-    w = canvas.width = window.innerWidth;
-    h = canvas.height = window.innerHeight;
-  }
-  window.addEventListener("resize", resize);
-
-  function addParticle(x, y) {
-    const a = Math.random() * Math.PI * 2;
-    const speed = Math.random() * 2 + 0.2;
-    particles.push({
-      x,
-      y,
-      vx: Math.cos(a) * speed,
-      vy: Math.sin(a) * speed,
-      life: 1,
-      size: (Math.random() * 0.6 + 0.6) * size,
-      color,
-    });
-    if (particles.length > 300) particles.splice(0, particles.length - 300);
+  for (let i = 0; i < particleCount; i++) {
+    const el = document.createElement("div");
+    el.className = "__cspark";
+    el.style.background = sparkleColor;
+    el.style.left = "0px";
+    el.style.top = "0px";
+    el.style.opacity = "0";
+    document.body.appendChild(el);
+    particles.push({ el, busy: false });
   }
 
-  let mouse = { x: -9999, y: -9999, movedAt: 0 };
+  let last = { x: 0, y: 0 };
+  function spawn(x, y) {
+    // find free particle
+    const p = particles.find((q) => !q.busy);
+    if (!p) return;
+    p.busy = true;
+    const el = p.el;
+    const dx = (Math.random() - 0.5) * 40;
+    const dy = (Math.random() - 0.5) * 40;
+    const scale = 0.6 + Math.random() * 0.9;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.style.opacity = "1";
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
+    setTimeout(() => {
+      el.style.opacity = "0";
+      el.style.transform = `translate(${dx * 1.5}px, ${dy * 1.5}px) scale(${scale * 0.2})`;
+    }, 20);
+    setTimeout(() => {
+      p.busy = false;
+      el.style.transform = `translate(-50%, -50%) scale(1)`;
+      el.style.opacity = "0";
+    }, 420);
+  }
+
+  let lastMove = 0;
   function onMove(e) {
-    mouse.x = e.clientX;
-    mouse.y = e.clientY;
-    mouse.movedAt = Date.now();
-    for (let i = 0; i < Math.floor(Math.random() * 2) + 1; i++) addParticle(mouse.x, mouse.y);
+    const now = Date.now();
+    const distance = Math.hypot(e.clientX - last.x, e.clientY - last.y);
+    last = { x: e.clientX, y: e.clientY };
+    if (distance < 6 && now - lastMove < 30) return; // throttle
+    lastMove = now;
+    // spawn a few
+    for (let i = 0; i < 2; i++) spawn(e.clientX + (Math.random() - 0.5) * 6, e.clientY + (Math.random() - 0.5) * 6);
   }
 
-  function onClick(e) {
-    for (let i = 0; i < (count * 2); i++) addParticle(e.clientX, e.clientY);
-  }
+  window.addEventListener("mousemove", onMove, { passive: true });
 
-  window.addEventListener("mousemove", onMove);
-  window.addEventListener("pointerdown", onClick);
-
-  let raf = null;
-  function draw() {
-    ctx.clearRect(0, 0, w, h);
-
-    for (let i = particles.length - 1; i >= 0; i--) {
-      const p = particles[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vx *= 0.98;
-      p.vy *= 0.98;
-      p.life -= decay;
-      const alpha = Math.max(0, Math.min(1, p.life));
-      ctx.beginPath();
-      ctx.fillStyle = p.color.replace(/[\d\.]+\)$/g, `${alpha})`);
-      // if color is rgba() and lacks alpha replacement, fallback:
-      if (!/rgba\(/.test(p.color)) ctx.fillStyle = `rgba(160,255,200,${alpha})`;
-      ctx.arc(p.x, p.y, Math.max(0.5, p.size * alpha), 0, Math.PI * 2);
-      ctx.fill();
-
-      if (p.life <= 0 || p.x < -50 || p.y < -50 || p.x > w + 50 || p.y > h + 50) {
-        particles.splice(i, 1);
-      }
-    }
-
-    raf = requestAnimationFrame(draw);
-  }
-
-  raf = requestAnimationFrame(draw);
-
-  // Return stop function
-  return function stop() {
+  // optionally cleanup on SPA navigation - not required, but helpful:
+  const cleanup = () => {
     window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("pointerdown", onClick);
-    window.removeEventListener("resize", resize);
-    if (raf) cancelAnimationFrame(raf);
-    if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);
-    window.__AK_CURSOR_SPARK_INITED = false;
+    particles.forEach((p) => p.el.remove());
+    styleEl.remove();
+    mounted = false;
   };
+
+  // expose cleanup for advanced uses
+  return { cleanup };
 }
