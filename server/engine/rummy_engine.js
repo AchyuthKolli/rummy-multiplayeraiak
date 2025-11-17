@@ -1,138 +1,240 @@
-/**
- * server/engine/rummy_engine.js
- * Core Rummy Engine — placed under server/engine to keep engine separate from API layer.
- *
- * Depends on:
- *   ../APIs/rummy_models.js
- *   ../APIs/scoring.js
- *
- * Export: class RummyEngine
- */
+// server/engine/rummy_engine.js
+// Full-featured Rummy Engine (Option B)
+// Exports: class RummyEngine
+//
+// Depends on server/APIs/rummy_models.js and server/APIs/scoring.js
+// - rummy_models should export: buildDeck(cfg), shuffleDeck(cards, seed)
+// - scoring should export: validate_hand(melds, leftover, wild_joker_rank, revealed), calculate_deadwood_points(cards, wild_joker_rank, revealed, ace_value), auto_organize_hand(hand, wild_joker_rank, revealed)
 
 const { buildDeck, shuffleDeck } = require("../APIs/rummy_models");
-const { validate_hand, calculate_deadwood_points, auto_organize_hand } = require("../APIs/scoring");
+const scoring = require("../APIs/scoring");
+const { v4: uuidv4 } = require("uuid");
 
-/* ----------------------------------
-   Utility – pick deck count
------------------------------------ */
-function pickDeckCount(playersCount) {
-  if (playersCount <= 2) return 1;
-  if (playersCount <= 4) return 2;
-  return 3; // 5–6 players
+/* ---------------------------
+   Helpers
+----------------------------*/
+function pickDeckCount(playerCount) {
+  if (playerCount <= 2) return 1;
+  if (playerCount <= 4) return 2;
+  return 3;
 }
 
-/* ----------------------------------
-   RummyEngine CLASS
------------------------------------ */
-class RummyEngine {
-  constructor(table_id, players = []) {
-    this.table_id = table_id;
+function encodeCard(card) {
+  if (!card) return "";
+  if (card.joker || card.rank === "JOKER") return "JOKER";
+  return `${card.rank}${card.suit || ""}`;
+}
 
-    // players = [{ user_id, display_name }]
-    this.players = players.map((p) => ({
+/* Default deck config helper */
+function defaultDeckConfig(nPlayers) {
+  return {
+    decks: pickDeckCount(nPlayers),
+    include_printed_jokers: true,
+  };
+}
+
+/* ---------------------------
+   RummyEngine
+----------------------------*/
+class RummyEngine {
+  /**
+   * tableMeta is optional object representing table-level metadata needed by engine:
+   * { table_id, host_user_id, wild_joker_mode, ace_value, disqualify_score, max_players }
+   *
+   * players: array of { user_id, display_name }
+   */
+  constructor(tableMeta = {}, players = []) {
+    this.table = {
+      table_id: tableMeta.table_id || uuidv4(),
+      host_user_id: tableMeta.host_user_id || null,
+      wild_joker_mode: tableMeta.wild_joker_mode || "open_joker",
+      ace_value: tableMeta.ace_value || 10,
+      disqualify_score: tableMeta.disqualify_score || 200,
+      max_players: tableMeta.max_players || 4,
+      status: "waiting",
+    };
+
+    // players state
+    this.players = (players || []).map((p, idx) => ({
       user_id: p.user_id,
-      display_name: p.display_name,
+      display_name: p.display_name || `Player-${String(p.user_id).slice(-6)}`,
+      seat: p.seat || idx + 1,
       hand: [],
       hasDrawn: false,
       dropped: false,
+      drop_points: 0,
     }));
 
-    this.nPlayers = this.players.length;
-
-    this.stock = [];
+    // round state
+    this.round_number = 0;
+    this.stock = []; // array of card objects
     this.discard = [];
-    this.discard_top = null;
-
-    this.active_index = 0;
-
+    this.discard_top = null; // encoded string
+    this.active_index = 0; // index into this.players
     this.wild_joker_rank = null;
     this.wild_joker_revealed = false;
+    this.players_with_first_sequence = []; // user_ids
+    this.round_over = false;
+    this.history = []; // array of round results
   }
 
-  // encode card for frontend (string like "10H" or "JOKER")
-  encode(card) {
-    if (!card) return "";
-    if (card.rank === "JOKER") return "JOKER";
-    return `${card.rank}${card.suit || ""}`;
+  /* ---------------------------
+     Utilities / Serializers
+  ----------------------------*/
+  serializeCard(card) {
+    return encodeCard(card);
   }
 
-  /* ----------------------------------
-     PART 2 — FINALIZED DEAL LOGIC
-  ----------------------------------- */
-  startRound() {
-    const deckCount = pickDeckCount(this.players.length);
+  getPlayerIndex(userId) {
+    return this.players.findIndex((p) => p.user_id === userId);
+  }
 
-    let fullDeck = [];
-    for (let i = 0; i < deckCount; i++) {
-      fullDeck = fullDeck.concat(buildDeck()); // buildDeck returns one deck (52 + 2 jokers)
+  getActiveUserId() {
+    return this.players[this.active_index] ? this.players[this.active_index].user_id : null;
+  }
+
+  // Safe snapshot for client (non-sensitive fields)
+  snapshotTable() {
+    return {
+      table_id: this.table.table_id,
+      status: this.table.status,
+      host_user_id: this.table.host_user_id,
+      round_number: this.round_number,
+      players: this.players.map((p) => ({
+        user_id: p.user_id,
+        display_name: p.display_name,
+        seat: p.seat,
+        hand_count: p.hand.length,
+        dropped: !!p.dropped,
+      })),
+      game_mode: this.table.wild_joker_mode,
+    };
+  }
+
+  /* ---------------------------
+     PART 1 — DEAL + START ROUND
+  ----------------------------*/
+  startRound(seed = null) {
+    if (this.table.status === "playing") {
+      return { ok: false, message: "Round already playing" };
+    }
+    if (this.players.filter((p) => !p.dropped).length < 2) {
+      return { ok: false, message: "Need at least 2 players to start" };
     }
 
-    // Shuffle
-    fullDeck = shuffleDeck(fullDeck);
+    this.round_number += 1;
+    this.round_over = false;
+    this.players.forEach((p) => {
+      p.hand = [];
+      p.hasDrawn = false;
+      p.dropped = false;
+      p.drop_points = 0;
+    });
 
-    // Deal 13 cards each
+    // Determine wild_joker_rank per table mode
+    if (this.table.wild_joker_mode && this.table.wild_joker_mode !== "no_joker") {
+      const ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
+      const idx = seed ? Math.abs(seed) % ranks.length : Math.floor(Math.random() * ranks.length);
+      this.wild_joker_rank = ranks[idx];
+    } else {
+      this.wild_joker_rank = null;
+    }
+    this.wild_joker_revealed = false;
+    this.players_with_first_sequence = [];
+
+    // Build deck(s)
+    const cfg = defaultDeckConfig(this.players.length);
+    let fullDeck = [];
+    for (let i = 0; i < cfg.decks; i++) {
+      fullDeck = fullDeck.concat(buildDeck({ include_printed_jokers: cfg.include_printed_jokers }));
+    }
+
+    // shuffle
+    fullDeck = shuffleDeck(fullDeck, seed);
+
+    // deal 13 each
     for (let i = 0; i < 13; i++) {
-      for (let p of this.players) {
+      for (const p of this.players) {
         const card = fullDeck.pop();
         p.hand.push(card);
       }
     }
 
-    // Reveal discard top — skip jokers until non-joker placed (preserve any printed jokers on top)
+    // reveal discard top: skip if you want to pop printed jokers onto discard but ensure discard top is first non-null
+    // keep popping until a non-printed-joker appears or deck empty
+    this.discard = [];
+    this.discard_top = null;
     while (fullDeck.length > 0) {
       const top = fullDeck.pop();
       this.discard.push(top);
-      this.discard_top = this.encode(top);
-
-      // If top is not a printed joker, stop here
-      if (!top.joker && top.rank !== "JOKER") break;
+      this.discard_top = this.serializeCard(top);
+      // if top is not a printed joker, break (printed jokers have card.joker true and rank === 'JOKER')
+      if (!(top.joker === true && top.rank === "JOKER")) break;
+      // else continue; printed jokers remain in discard stack
     }
 
-    // Remaining -> stock
-    this.stock = fullDeck;
+    // remaining => stock
+    this.stock = fullDeck.slice();
 
-    // Reset player states
-    this.players.forEach((p) => {
-      p.hasDrawn = false;
-      p.dropped = false;
-    });
+    // default active: host seat rotation — host first for round 1, rotate by round_number-1
+    let startIndex = 0;
+    if (this.table.host_user_id) {
+      const hostIdx = this.getPlayerIndex(this.table.host_user_id);
+      if (hostIdx >= 0) {
+        startIndex = (hostIdx + (this.round_number - 1)) % this.players.length;
+      }
+    }
+    this.active_index = startIndex;
 
-    this.active_index = 0;
+    this.table.status = "playing";
 
     return {
       ok: true,
-      table_id: this.table_id,
-      discard_top: this.discard_top,
-      stock_count: this.stock.length,
-    };
-  }
-
-  /* ----------------------------------
-     Get player's personal view
-  ----------------------------------- */
-  getPlayerView(userId) {
-    const p = this.players.find((x) => x.user_id === userId);
-    if (!p) return null;
-
-    return {
-      hand: p.hand,
+      round_number: this.round_number,
+      active_user_id: this.getActiveUserId(),
       stock_count: this.stock.length,
       discard_top: this.discard_top,
-      wild_joker_revealed: this.wild_joker_revealed,
       wild_joker_rank: this.wild_joker_rank,
     };
   }
 
-  /* ----------------------------------
-     Draw from Stock
-  ----------------------------------- */
+  /* ---------------------------
+     PART 2 — Player view
+  ----------------------------*/
+  getRoundMe(userId) {
+    const idx = this.getPlayerIndex(userId);
+    if (idx === -1) return { ok: false, message: "Not part of this table" };
+
+    const p = this.players[idx];
+    const handView = p.hand.map((c) => ({
+      rank: c.rank,
+      suit: c.suit || null,
+      joker: !!c.joker,
+      code: c.joker || c.rank === "JOKER" ? "JOKER" : `${c.rank}${c.suit || ""}`,
+    }));
+
+    return {
+      ok: true,
+      table_id: this.table.table_id,
+      round_number: this.round_number,
+      hand: handView,
+      stock_count: this.stock.length,
+      discard_top: this.discard_top,
+      wild_joker_revealed: this.wild_joker_revealed,
+      wild_joker_rank: this.wild_joker_rank,
+      active_user_id: this.getActiveUserId(),
+      finished_at: this.round_over ? new Date().toISOString() : null,
+    };
+  }
+
+  /* ---------------------------
+     PART 3 — DRAW / DISCARD / TURN
+  ----------------------------*/
   drawStock(userId) {
-    const p = this.players.find((x) => x.user_id === userId);
-    if (!p) return { ok: false, message: "Player not found" };
-
-    if (this.players[this.active_index].user_id !== userId)
-      return { ok: false, message: "Not your turn" };
-
+    const idx = this.getPlayerIndex(userId);
+    if (idx === -1) return { ok: false, message: "Player not in round" };
+    if (this.getActiveUserId() !== userId) return { ok: false, message: "Not your turn" };
+    const p = this.players[idx];
     if (p.hasDrawn) return { ok: false, message: "Already drawn" };
     if (this.stock.length === 0) return { ok: false, message: "Stock empty" };
 
@@ -148,499 +250,415 @@ class RummyEngine {
     };
   }
 
-  /* ----------------------------------
-     Draw from Discard
-  ----------------------------------- */
   drawDiscard(userId) {
-    const p = this.players.find((x) => x.user_id === userId);
-    if (!p) return { ok: false, message: "Player not found" };
-
-    if (this.players[this.active_index].user_id !== userId)
-      return { ok: false, message: "Not your turn" };
-
+    const idx = this.getPlayerIndex(userId);
+    if (idx === -1) return { ok: false, message: "Player not in round" };
+    if (this.getActiveUserId() !== userId) return { ok: false, message: "Not your turn" };
+    const p = this.players[idx];
     if (p.hasDrawn) return { ok: false, message: "Already drawn" };
-    if (!this.discard_top) return { ok: false, message: "Discard empty" };
+    if (this.discard.length === 0) return { ok: false, message: "Discard pile empty" };
 
     const card = this.discard.pop();
     p.hand.push(card);
     p.hasDrawn = true;
 
-    this.discard_top = this.discard.length
-      ? this.encode(this.discard[this.discard.length - 1])
-      : null;
+    this.discard_top = this.discard.length ? this.serializeCard(this.discard[this.discard.length - 1]) : null;
+
+    return {
+      ok: true,
+      hand: p.hand,
+      stock_count: this.stock.length,
+      discard_top: this.discard_top,
+    };
+  }
+
+  discardCard(userId, cardObj) {
+    const idx = this.getPlayerIndex(userId);
+    if (idx === -1) return { ok: false, message: "Player not in round" };
+    if (this.getActiveUserId() !== userId) return { ok: false, message: "Not your turn" };
+    const p = this.players[idx];
+    if (!p.hasDrawn) return { ok: false, message: "Must draw before discarding" };
+
+    // Match by rank and suit and joker flag
+    const removeIdx = p.hand.findIndex((c) => {
+      const csuit = c.suit || null;
+      const rsuit = cardObj.suit || null;
+      return c.rank === cardObj.rank && csuit === rsuit && (!!c.joker) === (!!cardObj.joker);
+    });
+    if (removeIdx === -1) return { ok: false, message: "Card not found in hand" };
+
+    const [removed] = p.hand.splice(removeIdx, 1);
+    this.discard.push(removed);
+    this.discard_top = this.serializeCard(removed);
+
+    // advance turn
+    this.advanceTurn();
 
     return {
       ok: true,
       hand: p.hand,
       discard_top: this.discard_top,
-      stock_count: this.stock.length,
+      next_active_user_id: this.getActiveUserId(),
     };
   }
 
-  /* ----------------------------------
-     Discard card
-  ----------------------------------- */
-  discardCard(userId, cardObj) {
-    const p = this.players.find((x) => x.user_id === userId);
-    if (!p) return { ok: false, message: "Player not found" };
-
-    if (this.players[this.active_index].user_id !== userId)
-      return { ok: false, message: "Not your turn" };
-
-    if (!p.hasDrawn) return { ok: false, message: "Must draw before discard" };
-
-    const idx = p.hand.findIndex(
-      (c) => c.rank === cardObj.rank && (c.suit || null) === (cardObj.suit || null)
-    );
-
-    if (idx === -1) return { ok: false, message: "Card not in hand" };
-
-    const [removed] = p.hand.splice(idx, 1);
-    this.discard.push(removed);
-    this.discard_top = this.encode(removed);
-
-    this.advanceTurn();
-
-    return { ok: true, hand: p.hand, discard_top: this.discard_top };
-  }
-
-  /* ----------------------------------
-     Advance Turn
-  ----------------------------------- */
   advanceTurn() {
-    this.players.forEach((p) => (p.hasDrawn = false));
-    // skip dropped players
-    const activeCount = this.players.filter((pl) => !pl.dropped).length;
-    if (activeCount === 0) {
+    // reset hasDrawn for next player, but only after rotating
+    // compute next non-dropped index
+    if (this.players.length === 0) {
       this.active_index = 0;
       return;
     }
 
-    // Advance to next non-dropped player
     let next = (this.active_index + 1) % this.players.length;
-    while (this.players[next].dropped) {
+    // find next non-dropped player
+    let attempts = 0;
+    while (this.players[next].dropped && attempts < this.players.length) {
       next = (next + 1) % this.players.length;
+      attempts++;
     }
     this.active_index = next;
+
+    // Reset hasDrawn for everyone at the start of each active player's turn
+    this.players.forEach((p) => (p.hasDrawn = false));
   }
 
-  /* ----------------------------------
-     Drop player (before draw penalty handled by caller)
-  ----------------------------------- */
+  /* ---------------------------
+     PART 4 — DROP LOGIC + PENALTIES
+  ----------------------------*/
   dropPlayer(userId) {
-    const p = this.players.find((x) => x.user_id === userId);
-    if (!p) return { ok: false, message: "Player not in round" };
-    p.dropped = true;
-    // If dropped player was active, advance turn
-    if (this.players[this.active_index].user_id === userId) {
-      this.advanceTurn();
-    }
-    return { ok: true };
-  }
+    const idx = this.getPlayerIndex(userId);
+    if (idx === -1) return { ok: false, message: "Player not in round" };
+    const p = this.players[idx];
+    if (p.dropped) return { ok: false, message: "Player already dropped" };
 
-  /* ----------------------------------
-     Simple declare handler (full validation & scoring will be in scoring module)
-     This function only performs:
-       - basic membership checks
-       - ensures declared groups use cards from player's hand
-       - returns object to caller so server can write DB and compute final scores
-  ----------------------------------- */
-  prepareDeclare(userId, groups) {
-    const p = this.players.find((x) => x.user_id === userId);
-    if (!p) return { ok: false, message: "Player not found" };
-
-    // Flatten declared cards and verify counts/subset of hand
-    const flattened = [].concat(...groups);
-    if (flattened.length !== 13) {
-      return { ok: false, message: "Declared groups must contain exactly 13 cards" };
-    }
-
-    // Check declared cards exist in hand copy
-    const handCopy = p.hand.slice();
-    for (const card of flattened) {
-      const idx = handCopy.findIndex(
-        (c) => c.rank === card.rank && (c.suit || null) === (card.suit || null)
-      );
-      if (idx === -1) {
-        return { ok: false, message: `Declared card ${card.rank}${card.suit||''} not in your hand` };
-      }
-      handCopy.splice(idx, 1);
-    }
-
-    // If it passes basic check, return payload for server-side scoring
-    return { ok: true, declared_groups: groups };
-  }
-}
-
-module.exports = RummyEngine;
-// -----------------------------------------------------
-// PART 3 — DECLARE / VALIDATION / SCORING
-// -----------------------------------------------------
-
-// Card point rules (Ace = 10, printed jokers = 0, wild jokers = 0)
-_cardPoints(card, aceValue = 10) {
-  if (card.rank === "JOKER") return 0;
-
-  if (card.rank === "A") return aceValue;
-
-  if (["J", "Q", "K", "10"].includes(card.rank)) return 10;
-
-  return Number(card.rank);
-}
-
-// Is printed or wild joker?
-_isJoker(card) {
-  if (card.rank === "JOKER") return true;
-  if (!this.wild_joker_rank) return false;
-  return card.rank === this.wild_joker_rank;
-}
-
-// Check if cards form a valid set
-_isValidSet(group) {
-  if (group.length < 3 || group.length > 4) return false;
-
-  const nonJokers = group.filter(c => !_isJoker(c));
-  if (nonJokers.length < 2) return false;
-
-  const ranks = new Set(nonJokers.map(c => c.rank));
-  if (ranks.size !== 1) return false;
-
-  const suits = new Set(nonJokers.map(c => c.suit).filter(Boolean));
-  if (suits.size !== nonJokers.length) return false;
-
-  return true;
-}
-
-// Validate sequence (pure or impure)
-_isValidSequence(group) {
-  if (group.length < 3) return { valid: false, pure: false };
-
-  const nonJokers = group.filter(c => !this._isJoker(c));
-  const jokerCount = group.length - nonJokers.length;
-
-  const suits = new Set(nonJokers.map(c => c.suit));
-  if (suits.size > 1) return { valid: false, pure: false };
-
-  // convert ranks to numbers
-  const rankMap = {
-    "A": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7,
-    "8": 8, "9": 9, "10": 10, "J": 11, "Q": 12, "K": 13
-  };
-  const values = nonJokers.map(c => rankMap[c.rank]).sort((a,b) => a-b);
-
-  // check consecutive with jokers filling gaps
-  let neededJokers = 0;
-  for (let i = 1; i < values.length; i++) {
-    const gap = values[i] - values[i-1] - 1;
-    if (gap > 0) neededJokers += gap;
-  }
-
-  const valid = neededJokers <= jokerCount;
-  const pure = neededJokers === 0 && jokerCount === 0;
-
-  return { valid, pure };
-}
-
-// Validate meld groups for declare
-_validateMelds(melds) {
-  let hasPureSeq = false;
-
-  for (let group of melds) {
-    const seq = this._isValidSequence(group);
-    const isSet = this._isValidSet(group);
-
-    if (!seq.valid && !isSet) {
-      return { ok: false, message: "Invalid meld found" };
-    }
-
-    if (seq.pure) hasPureSeq = true;
-  }
-
-  if (!hasPureSeq) {
-    return { ok: false, message: "At least 1 pure sequence required" };
-  }
-
-  return { ok: true };
-}
-
-// Calculate deadwood points after valid declare
-_calculateDeadwood(hand) {
-  let total = 0;
-  for (let card of hand) {
-    if (this._isJoker(card)) continue;
-    total += this._cardPoints(card);
-  }
-  return Math.min(total, 80);
-}
-
-// Main declare function
-declare(playerId, melds) {
-  const p = this.players.find(pl => pl.user_id === playerId);
-  if (!p) return { ok: false, message: "Player not in round" };
-
-  if (melds.flat().length !== 13) {
-    return { ok: false, message: "Must declare exactly 13 cards" };
-  }
-
-  const { ok, message } = this._validateMelds(melds);
-  if (!ok) {
-    // Wrong declaration → 80 penalty, others 0
-    const scores = {};
-    for (const pl of this.players) {
-      scores[pl.user_id] = pl.user_id === playerId ? 80 : 0;
-    }
-    this.table.history.push({
-      round: this.table.round_number,
-      valid: false,
-      winner: null,
-      scores,
-      time: new Date().toISOString()
-    });
-    this.table.status = "round_complete";
-    return { ok: false, message: "Wrong Declare", scores };
-  }
-
-  // Valid declaration
-  const scores = {};
-  scores[playerId] = 0;
-
-  for (const opponent of this.players) {
-    if (opponent.user_id === playerId) continue;
-
-    // deadwood = cards remaining in hand that weren't declared
-    const dead = opponent.hand;
-    scores[opponent.user_id] = this._calculateDeadwood(dead);
-  }
-
-  this.table.history.push({
-    round: this.table.round_number,
-    valid: true,
-    winner: playerId,
-    scores,
-    time: new Date().toISOString()
-  });
-
-  this.table.status = "round_complete";
-
-  return { ok: true, message: "Valid Declare", scores };
-}
-// -------------------------------------------------------
-// PART 5 — DROP LOGIC + PENALTIES
-// -------------------------------------------------------
-
-handleDrop(userId) {
-    const p = this.players.find(p => p.user_id === userId);
-    if (!p) {
-        return { ok: false, message: "Player not found in this round" };
-    }
-
-    // Player already dropped?
-    if (p.dropped) {
-        return { ok: false, message: "Player already dropped" };
-    }
-
+    // penalty rules:
+    // - drop before drawing first card => 20
+    // - drop after drawing / in middle => 40 (or 60 depending on your rules). We'll use 40 but it's configurable.
     let penalty = 0;
-
-    // Case 1: First turn drop → 20 points
-    if (!p.hasDrawn) {
-        penalty = 20;
-    }
-    else {
-        // Case 2: Middle drop → 40 points or 60 by rule
-        penalty = 40;
-    }
+    if (!p.hasDrawn) penalty = 20; // first-turn drop
+    else penalty = 40; // middle drop; you can set 60 by changing this logic
 
     p.dropped = true;
     p.drop_points = penalty;
 
-    // Add to history
-    this.table.history.push({
-        action: "drop",
-        user_id: userId,
-        round_number: this.table.round_number,
-        penalty,
-        time: new Date().toISOString()
-    });
-
-    // If all players except one drop → auto declare winner
-    const activePlayers = this.players.filter(pl => !pl.dropped);
-
+    // If only 1 active player remains, auto-finish round awarding winner
+    const activePlayers = this.players.filter((pl) => !pl.dropped);
     if (activePlayers.length === 1) {
-        const winnerId = activePlayers[0].user_id;
-
-        // Auto finish round
-        return this._autoFinishAfterDrops(winnerId);
+      const winnerId = activePlayers[0].user_id;
+      return this._autoFinishAfterDrops(winnerId);
     }
 
-    return { ok: true, message: `Player dropped with ${penalty} points` };
-}
+    // If dropped player was current active, advance turn
+    if (this.getActiveUserId() === userId) this.advanceTurn();
 
+    return { ok: true, message: `Player dropped, penalty ${penalty}`, penalty };
+  }
 
-_autoFinishAfterDrops(winnerId) {
+  _autoFinishAfterDrops(winnerId) {
+    const scores = {};
+    for (const p of this.players) {
+      if (p.user_id === winnerId) scores[p.user_id] = 0;
+      else if (p.dropped) scores[p.user_id] = p.drop_points || 0;
+      else scores[p.user_id] = 40; // fallback
+    }
+
+    const record = {
+      round_number: this.round_number,
+      winner: winnerId,
+      valid: true,
+      auto_finished: true,
+      scores,
+      time: new Date().toISOString(),
+      wild_joker_rank: this.wild_joker_rank,
+      wild_joker_revealed: this.wild_joker_revealed,
+    };
+    this.history.push(record);
+    this.round_over = true;
+    this.table.status = "round_complete";
+
+    return { ok: true, auto_finished: true, winner: winnerId, scores };
+  }
+
+  /* ---------------------------
+     PART 5 — LOCK SEQUENCE (reveal wild joker)
+     body: meld: [{rank,suit},...]
+     If player locks a pure sequence first time, mark them and reveal wild joker.
+  ----------------------------*/
+  lockSequence(userId, meld) {
+    // Basic checks
+    const idx = this.getPlayerIndex(userId);
+    if (idx === -1) return { ok: false, message: "Player not in round" };
+    if (!Array.isArray(meld) || meld.length < 3) return { ok: false, message: "Meld must be at least 3 cards" };
+
+    // Use scoring.validate_hand if available to check pure sequence.
+    // scoring.validate_hand returns [bool, message] in some implementations; to be defensive, accept multiple shapes.
+    try {
+      // We test using scoring.is_sequence / is_pure_sequence if present; otherwise fall back to validate_hand
+      let isPure = false;
+      if (typeof scoring.is_pure_sequence === "function") {
+        isPure = scoring.is_pure_sequence(meld, this.wild_joker_rank, this.players_with_first_sequence.includes(userId));
+      } else if (typeof scoring.validate_hand === "function") {
+        // validate_hand expects full declaration; we'll call is_sequence-ish from scoring if available
+        const [ok, msg] = scoring.validate_hand([meld], [], this.wild_joker_rank, this.players_with_first_sequence.includes(userId));
+        isPure = ok; // conservative — if validate_hand says ok for the small meld treat as pure
+      } else {
+        // fallback: accept and reveal (less strict)
+        isPure = true;
+      }
+
+      if (!isPure) {
+        return { ok: false, message: "Meld not a pure sequence" };
+      }
+
+      if (!this.players_with_first_sequence.includes(userId)) {
+        this.players_with_first_sequence.push(userId);
+      }
+      // Reveal wild joker to everyone (server behavior)
+      this.wild_joker_revealed = true;
+
+      return { ok: true, message: "Pure sequence locked, wild joker revealed", wild_joker_rank: this.wild_joker_rank };
+    } catch (e) {
+      return { ok: false, message: `Lock sequence failed: ${String(e)}` };
+    }
+  }
+
+  /* ---------------------------
+     PART 6 — DECLARE FLOW
+     prepareDeclare: light-weight client-side subset check
+     finishRound / declare: full validation using scoring module
+  ----------------------------*/
+  prepareDeclare(userId, groups) {
+    const idx = this.getPlayerIndex(userId);
+    if (idx === -1) return { ok: false, message: "Player not in round" };
+    const p = this.players[idx];
+
+    // flattened 13-card check
+    const flattened = Array.isArray(groups) ? [].concat(...groups) : [];
+    if (flattened.length !== 13) return { ok: false, message: "Declared groups must contain exactly 13 cards" };
+
+    // verify they exist in player's hand
+    const handCopy = p.hand.slice();
+    for (const card of flattened) {
+      const findIdx = handCopy.findIndex((c) => c.rank === card.rank && (c.suit || null) === (card.suit || null) && (!!c.joker) === (!!card.joker));
+      if (findIdx === -1) return { ok: false, message: `Declared card ${card.rank}${card.suit || ""} not in your hand` };
+      handCopy.splice(findIdx, 1);
+    }
+
+    return { ok: true, declared_groups: groups };
+  }
+
+  /**
+   * declare: runs full validation & scoring using scoring module.
+   * groups: array of arrays representing the melds (13 cards)
+   *
+   * returns: { ok: true/false, valid: bool, scores: {userId:points}, organized_melds, message }
+   */
+  declare(userId, groups) {
+    const idx = this.getPlayerIndex(userId);
+    if (idx === -1) return { ok: false, message: "Player not in round" };
+    const p = this.players[idx];
+
+    // require player had 14 cards (drawn)
+    if (p.hand.length !== 14) {
+      return { ok: false, message: `Must have 14 cards to declare. You have ${p.hand.length}` };
+    }
+
+    // Basic subset check
+    const prep = this.prepareDeclare(userId, groups);
+    if (!prep.ok) return { ok: false, message: prep.message };
+
+    // Build hands map snapshot (for scoring)
+    const handsSnapshot = {};
+    for (const pl of this.players) handsSnapshot[pl.user_id] = pl.hand.slice();
+
+    // Use scoring.validate_hand (server scoring module)
+    let valid = false;
+    let reason = "Validation not executed";
+    try {
+      // scoring.validate_hand returns (True/False, message) in user-provided module shape
+      if (typeof scoring.validate_hand === "function") {
+        const [ok, msg] = scoring.validate_hand(groups, [], this.wild_joker_rank, this.players_with_first_sequence.includes(userId));
+        valid = !!ok;
+        reason = msg || (valid ? "Valid declaration" : "Invalid declaration");
+      } else {
+        // Fallback: accept as valid (should not happen if scoring module exists)
+        valid = true;
+        reason = "No server-side validation available; accepted by default";
+      }
+    } catch (e) {
+      valid = false;
+      reason = `Validation error: ${String(e)}`;
+    }
+
+    const organizedMelds = {};
     const scores = {};
 
-    for (const p of this.players) {
-        if (p.user_id === winnerId) {
-            scores[p.user_id] = 0;
+    if (valid) {
+      // Winner gets 0 points
+      scores[userId] = 0;
+      // For each opponent, auto-organize their hand and calculate deadwood
+      for (const opp of this.players) {
+        if (opp.user_id === userId) {
+          organizedMelds[opp.user_id] = {
+            pure_sequences: groups, // winner declared groups (approx)
+            sequences: [],
+            sets: [],
+            deadwood: [],
+          };
+          continue;
         }
-        else if (p.dropped) {
-            scores[p.user_id] = p.drop_points;
+
+        // Opponent may have dropped
+        if (opp.dropped) {
+          scores[opp.user_id] = opp.drop_points || 0;
+          organizedMelds[opp.user_id] = { pure_sequences: [], sequences: [], sets: [], deadwood: [] };
+          continue;
         }
-        else {
-            // Should not happen but fallback
-            scores[p.user_id] = 40;
+
+        // Auto organize opponent hand using scoring.auto_organize_hand if available
+        let melds = [];
+        let leftover = opp.hand.slice();
+        if (typeof scoring.auto_organize_hand === "function") {
+          try {
+            const out = scoring.auto_organize_hand(opp.hand.slice(), this.wild_joker_rank, this.players_with_first_sequence.includes(opp.user_id));
+            if (Array.isArray(out) && out.length === 2) {
+              melds = out[0];
+              leftover = out[1];
+            }
+          } catch (e) {
+            // fallback: treat whole hand as leftover
+            melds = [];
+            leftover = opp.hand.slice();
+          }
         }
+
+        const deadwoodPts = (typeof scoring.calculate_deadwood_points === "function")
+          ? scoring.calculate_deadwood_points(leftover, this.wild_joker_rank, this.players_with_first_sequence.includes(opp.user_id), this.table.ace_value)
+          : leftover.reduce((s, c) => s + this._cardPoints(c, this.table.ace_value), 0);
+
+        scores[opp.user_id] = Math.min(deadwoodPts, 80);
+        organizedMelds[opp.user_id] = {
+          pure_sequences: melds.filter((m) => scoring.is_pure_sequence ? scoring.is_pure_sequence(m, this.wild_joker_rank, this.players_with_first_sequence.includes(opp.user_id)) : []),
+          sequences: melds.filter((m) => scoring.is_sequence ? scoring.is_sequence(m, this.wild_joker_rank, this.players_with_first_sequence.includes(opp.user_id)) && !(scoring.is_pure_sequence && scoring.is_pure_sequence(m, this.wild_joker_rank, this.players_with_first_sequence.includes(opp.user_id))) : []),
+          sets: melds.filter((m) => scoring.is_set ? scoring.is_set(m, this.wild_joker_rank, this.players_with_first_sequence.includes(opp.user_id)) : []),
+          deadwood: leftover,
+        };
+      }
+    } else {
+      // Wrong show: declarer gets penalty (full deadwood capped at 80), others 0
+      const declarerPts = Math.min(
+        (typeof scoring.calculate_deadwood_points === "function")
+          ? scoring.calculate_deadwood_points(p.hand.slice(), this.wild_joker_rank, this.players_with_first_sequence.includes(userId), this.table.ace_value)
+          : p.hand.reduce((s, c) => s + this._cardPoints(c, this.table.ace_value), 0),
+        80
+      );
+
+      for (const pl of this.players) {
+        if (pl.user_id === userId) {
+          scores[pl.user_id] = declarerPts;
+          organizedMelds[pl.user_id] = { pure_sequences: [], sequences: [], sets: [], deadwood: pl.hand.slice() };
+        } else {
+          scores[pl.user_id] = 0;
+          organizedMelds[pl.user_id] = { pure_sequences: [], sequences: [], sets: [], deadwood: [] };
+        }
+      }
     }
 
-    this.table.history.push({
-        action: "round_finished_auto_drop",
-        winner: winnerId,
-        round_number: this.table.round_number,
-        result: scores,
-        time: new Date().toISOString()
-    });
-
-    this.table.status = "round_complete";
+    // persist result into engine history and mark round finished
+    const record = {
+      round_number: this.round_number,
+      declared_by: userId,
+      valid,
+      reason,
+      scores,
+      organized_melds: organizedMelds,
+      hands_snapshot: handsSnapshot,
+      wild_joker_rank: this.wild_joker_rank,
+      wild_joker_revealed: this.wild_joker_revealed,
+      time: new Date().toISOString(),
+    };
+    this.history.push(record);
     this.round_over = true;
+    this.table.status = "round_complete";
 
     return {
-        ok: true,
-        auto_finished: true,
-        winner: winnerId,
-        scores
+      ok: true,
+      valid,
+      message: reason,
+      scores,
+      organized_melds: organizedMelds,
     };
-}
-// -------------------------------------------------------
-// PART 6 — ROUND FINISH + NEXT ROUND SETUP
-// -------------------------------------------------------
+  }
 
-finishRound(declarerId, userMelds, scoring) {
-    if (this.round_over) {
-        return { ok: false, message: "Round already finished" };
-    }
+  /* ---------------------------
+     PART 7 — FINISH ROUND & NEXT ROUND PREPARATION
+  ----------------------------*/
+  // finishRound delegated above in declare. We provide prepareNextRound to re-deal and rotate starting player.
+  prepareNextRound() {
+    if (!this.round_over) return { ok: false, message: "Cannot start next round — previous not finished" };
 
-    const declarer = this.players.find(p => p.user_id === declarerId);
-    if (!declarer) return { ok: false, message: "Declarer not found" };
-
-    // -------------------------------
-    // 1) Validate using scoring.js
-    // -------------------------------
-
-    const { validateHand, calculate_deadwood_points, auto_organize_hand } = scoring;
-
-    const [valid, msg] = validateHand(
-        userMelds,
-        [],
-        this.wild_joker_rank,
-        this.wild_joker_revealed
-    );
-
-    const scores = {};
-
-    // -------------------------------
-    // 2) WRONG SHOW → declarer gets 80
-    // -------------------------------
-    if (!valid) {
-        for (const p of this.players) {
-            if (p.user_id === declarerId) scores[p.user_id] = 80;
-            else scores[p.user_id] = 0;
-        }
-
-        this._storeRoundHistory(declarerId, scores, false, msg);
-
-        this.round_over = true;
-        this.table.status = "round_complete";
-
-        return { ok: true, valid: false, message: msg, scores };
-    }
-
-    // -------------------------------
-    // 3) VALID DECLARE → others get points
-    // -------------------------------
-    scores[declarerId] = 0; // winner gets 0
-
+    // Eliminate players over disqualify_score if needed (engine-level marking only)
+    const survivors = [];
     for (const p of this.players) {
-        if (p.user_id === declarerId) continue;
-
-        if (p.dropped) {
-            scores[p.user_id] = p.drop_points;
-            continue;
-        }
-
-        // Opponent scoring: auto organize their hand
-        const [melds, leftover] = auto_organize_hand(
-            p.hand,
-            this.wild_joker_rank,
-            this.wild_joker_revealed
-        );
-
-        const deadwood = calculate_deadwood_points(
-            leftover,
-            this.wild_joker_rank,
-            this.wild_joker_revealed
-        );
-
-        scores[p.user_id] = deadwood;
+      // compute total points from history accumulated for this player
+      // engine doesn't track table-level total points by default — leave to DB layer.
+      survivors.push(p.user_id);
     }
 
-    // -------------------------------
-    // 4) Store round history
-    // -------------------------------
-    this._storeRoundHistory(declarerId, scores, true, "Valid Show");
-
-    // -------------------------------
-    // 5) Mark round complete
-    // -------------------------------
-    this.round_over = true;
-    this.table.status = "round_complete";
-
-    return { ok: true, valid: true, message: "Valid Show", scores };
-}
-
-
-
-// -------------------------------------------------------
-// PRIVATE: SAVE ROUND RESULTS TO TABLE HISTORY
-// -------------------------------------------------------
-_storeRoundHistory(winnerId, scores, valid, reason) {
-    this.table.history.push({
-        round_number: this.table.round_number,
-        winner: valid ? winnerId : null,
-        reason,
-        valid,
-        result: scores,
-        wild_joker: this.wild_joker_rank,
-        revealed: this.wild_joker_revealed,
-        time: new Date().toISOString()
-    });
-}
-
-
-
-// -------------------------------------------------------
-// PREPARE NEXT ROUND
-// -------------------------------------------------------
-prepareNextRound() {
-    if (!this.round_over) {
-        return { ok: false, message: "Cannot start next round — previous not finished" };
-    }
-
-    this.table.round_number += 1;
-
-    // Reset engine state
+    // reset round flags
+    this.round_over = false;
     this.wild_joker_rank = null;
     this.wild_joker_revealed = false;
+    this.players_with_first_sequence = [];
 
-    this._initDeck();
-    this._dealCards();
+    // increment round and re-deal
+    return this.startRound();
+  }
 
-    this.round_over = false;
-    this.table.status = "playing";
+  /* ---------------------------
+     PART 8 — Internal helpers (card scoring & validators)
+  ----------------------------*/
+  _cardPoints(card, aceValue = 10) {
+    if (!card) return 0;
+    if (card.joker || card.rank === "JOKER") return 0;
+    const r = card.rank;
+    if (["J", "Q", "K", "10"].includes(r)) return 10;
+    if (r === "A") return aceValue === 1 ? 1 : 10;
+    const n = Number(r);
+    return Number.isNaN(n) ? 0 : n;
+  }
+
+  _isJokerCard(card) {
+    if (!card) return false;
+    if (card.rank === "JOKER") return true;
+    if (!this.wild_joker_rank) return false;
+    // wild joker acts as joker only after it is revealed to that player; engine-level check uses global revealed flag
+    return this.wild_joker_revealed && card.rank === this.wild_joker_rank;
+  }
+
+  /* ---------------------------
+     Utility: build engine state snapshot for DB writing
+  ----------------------------*/
+  toRoundDBPayload() {
+    const hands = {};
+    for (const p of this.players) hands[p.user_id] = p.hand.slice();
 
     return {
-        ok: true,
-        round_number: this.table.round_number,
-        stock_count: this.stock.length,
-        discard_top: this.discard_top
+      id: uuidv4(),
+      table_id: this.table.table_id,
+      number: this.round_number,
+      printed_joker: null,
+      wild_joker_rank: this.wild_joker_rank,
+      stock: JSON.parse(JSON.stringify(this.stock)),
+      discard: JSON.parse(JSON.stringify(this.discard)),
+      hands: JSON.parse(JSON.stringify(hands)),
+      active_user_id: this.getActiveUserId(),
+      game_mode: this.table.wild_joker_mode,
+      ace_value: this.table.ace_value,
+      players_with_first_sequence: JSON.parse(JSON.stringify(this.players_with_first_sequence)),
     };
+  }
 }
+
+module.exports = RummyEngine;
