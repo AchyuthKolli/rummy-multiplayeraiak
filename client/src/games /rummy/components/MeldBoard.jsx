@@ -1,140 +1,156 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useTableSocket } from "../../../../../apiclient/socket"; // adjust if different
+import { useTableSocket } from "../../../../../apiclient/socket";
 import PlayingCard from "./PlayingCard";
-import "./meldboard.css"; // you can style or skip
+import "./meldboard.css";
 
 /**
- * Rummy MeldBoard – 3/3/3/4 Layout
- *
- * props:
- * - tableId
- * - userId
- * - hand        ← array of player cards
- * - onMeldChange(groups) ← parent updates UI state
+ * Final MeldBoard (Option-B)
+ * - 3/3/3/4
+ * - Orange lock (freeze meld)
+ * - Green lock (pure sequence → reveal wild)
+ * - Mobile drag/drop support
+ * - LocalStorage persistence
  */
 export default function MeldBoard({ tableId, userId, hand, onMeldChange }) {
   const socket = useTableSocket();
 
-  const [melds, setMelds] = useState([[], [], [], []]); // 3/3/3/4
-  const [locked, setLocked] = useState([false, false, false, false]); // lock per meld
-  const [sequenceLocked, setSequenceLocked] = useState(false); // green lock
+  const [melds, setMelds] = useState([[], [], [], []]);
+  const [locked, setLocked] = useState([false, false, false, false]);
+  const [sequenceLocked, setSequenceLocked] = useState(false);
 
-  /* -----------------------------------------
-      Load saved melds from localStorage
-  -----------------------------------------*/
+  /* --------------------------------------------------
+     Load saved state
+  ---------------------------------------------------*/
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(`melds_${tableId}_${userId}`);
-      const savedLock = localStorage.getItem(`locks_${tableId}_${userId}`);
+      const m = localStorage.getItem(`melds_${tableId}_${userId}`);
+      const l = localStorage.getItem(`locks_${tableId}_${userId}`);
       const seq = localStorage.getItem(`seqLock_${tableId}_${userId}`);
 
-      if (saved) setMelds(JSON.parse(saved));
-      if (savedLock) setLocked(JSON.parse(savedLock));
+      if (m) setMelds(JSON.parse(m));
+      if (l) setLocked(JSON.parse(l));
       if (seq === "true") setSequenceLocked(true);
     } catch {}
-  }, [tableId, userId]);
+  }, []);
 
-  /* -----------------------------------------
-        Save to LocalStorage
-  -----------------------------------------*/
-  const saveState = (m, l, s) => {
+  const saveLS = (m, l, seq) => {
     try {
       localStorage.setItem(`melds_${tableId}_${userId}`, JSON.stringify(m));
       localStorage.setItem(`locks_${tableId}_${userId}`, JSON.stringify(l));
-      localStorage.setItem(`seqLock_${tableId}_${userId}`, s ? "true" : "false");
+      localStorage.setItem(`seqLock_${tableId}_${userId}`, seq ? "true" : "false");
     } catch {}
   };
 
-  /* -----------------------------------------
-      Drag + Drop
-  -----------------------------------------*/
-  function onDropCard(card, meldIndex) {
-    if (locked[meldIndex]) {
+  /* --------------------------------------------------
+     DROP HANDLER (desktop + mobile)
+  ---------------------------------------------------*/
+  function onDropCard(card, boxIndex) {
+    if (locked[boxIndex]) {
       toast.error("This meld is locked.");
       return;
     }
 
-    const newMelds = [...melds];
-    const limit = meldIndex === 3 ? 4 : 3;
+    const limit = boxIndex === 3 ? 4 : 3;
 
-    if (newMelds[meldIndex].length >= limit) {
-      toast.error(`Meld ${meldIndex + 1} can only hold ${limit} cards`);
+    const m = JSON.parse(JSON.stringify(melds)); // deep copy
+
+    if (m[boxIndex].length >= limit) {
+      toast.error(`Meld ${boxIndex + 1} can only hold ${limit} cards`);
       return;
     }
 
-    // Remove from other melds
+    // Remove from all melds
     for (let i = 0; i < 4; i++) {
-      newMelds[i] = newMelds[i].filter(
-        (c) => !(c.rank === card.rank && c.suit === card.suit && c.joker === card.joker)
+      m[i] = m[i].filter(
+        (c) =>
+          !(
+            c.rank === card.rank &&
+            c.suit === card.suit &&
+            c.joker === card.joker
+          )
       );
     }
 
-    newMelds[meldIndex].push(card);
-    setMelds(newMelds);
-    saveState(newMelds, locked, sequenceLocked);
-    onMeldChange(newMelds);
+    // Add to target
+    m[boxIndex].push(card);
+
+    setMelds(m);
+    saveLS(m, locked, sequenceLocked);
+    onMeldChange(m);
   }
 
-  /* -----------------------------------------
-       Lock a Meld (orange lock)
-  -----------------------------------------*/
-  function lockSingle(meldIndex) {
-    const limit = meldIndex === 3 ? 4 : 3;
-    if (melds[meldIndex].length !== limit) {
-      toast.error(`Meld ${meldIndex + 1} must have ${limit} cards.`);
+  /* --------------------------------------------------
+      ORANGE LOCK
+  ---------------------------------------------------*/
+  function lockSingle(index) {
+    const limit = index === 3 ? 4 : 3;
+
+    if (melds[index].length !== limit) {
+      toast.error(`Meld ${index + 1} must have ${limit} cards`);
       return;
     }
 
-    const newLocked = [...locked];
-    newLocked[meldIndex] = true;
-    setLocked(newLocked);
+    const l = [...locked];
+    l[index] = true;
 
-    saveState(melds, newLocked, sequenceLocked);
-    toast.success(`Meld ${meldIndex + 1} locked`);
+    setLocked(l);
+    saveLS(melds, l, sequenceLocked);
+
+    toast.success(`Meld ${index + 1} locked`);
   }
 
-  /* -----------------------------------------
-      Lock Pure Sequence (GREEN LOCK)
-      → triggers wild joker reveal in closed joker mode
-  -----------------------------------------*/
+  /* --------------------------------------------------
+      GREEN LOCK (Reveal Wild Joker)
+  ---------------------------------------------------*/
   function lockPureSeq() {
     if (sequenceLocked) return;
 
-    // Must check if any meld is a pure sequence of 3 or 4
-    const found = melds.some((g) => g.length >= 3);
+    // simple requirement: any meld with >= 3 cards
+    const hasSeq = melds.some((g) => g.length >= 3);
 
-    if (!found) {
-      toast.error("Place a pure sequence first.");
+    if (!hasSeq) {
+      toast.error("Add a pure sequence first.");
       return;
     }
 
     setSequenceLocked(true);
-    saveState(melds, locked, true);
+    saveLS(melds, locked, true);
 
     socket.emit("rummy.lockSequence", {
       tableId,
       userId,
-      meld: melds[0], // Typically first meld
+      meld: melds[0],
     });
 
-    toast.success("Pure sequence locked. Wild Joker revealed!");
+    toast.success("Pure sequence locked — Wild Joker revealed!");
   }
 
-  /* -----------------------------------------
-        UI – Render each Meld Box
-  -----------------------------------------*/
+  /* --------------------------------------------------
+      LEFTOVER (cards still in hand)
+  ---------------------------------------------------*/
+  const placed = new Set(
+    melds.flat().map((c) => `${c.rank}${c.suit}${c.joker}`)
+  );
+
+  const leftover = hand.filter(
+    (c) => !placed.has(`${c.rank}${c.suit}${c.joker}`)
+  );
+
+  /* --------------------------------------------------
+      Render a single meld box
+  ---------------------------------------------------*/
   const renderMeld = (meld, index) => {
     const size = index === 3 ? 4 : 3;
 
     return (
-      <div className="meld-box" key={index}>
+      <div className="meld-box">
         <div className="meld-header">
-          <span>Meld {index + 1} ({size} cards)</span>
+          <span>Meld {index + 1} ({size})</span>
           <button
-            className="lock-btn"
-            disabled={locked[index]}
+            className={`lock-btn ${locked[index] ? "locked" : ""}`}
             onClick={() => lockSingle(index)}
+            disabled={locked[index]}
           >
             {locked[index] ? "🔒" : "🔓"}
           </button>
@@ -147,15 +163,22 @@ export default function MeldBoard({ tableId, userId, hand, onMeldChange }) {
               <div
                 key={i}
                 className="meld-slot"
+                onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
                   const card = JSON.parse(e.dataTransfer.getData("card"));
                   onDropCard(card, index);
                 }}
-                onDragOver={(e) => e.preventDefault()}
+                onTouchEnd={(e) => {
+                  // mobile drop logic
+                  const json = e.target.dataset.card;
+                  if (!json) return;
+                  const card = JSON.parse(json);
+                  onDropCard(card, index);
+                }}
               >
                 {meld[i] ? (
-                  <PlayingCard card={meld[i]} small />
+                  <PlayingCard card={meld[i]} draggable={false} small />
                 ) : (
                   <div className="empty-slot">{i + 1}</div>
                 )}
@@ -166,20 +189,9 @@ export default function MeldBoard({ tableId, userId, hand, onMeldChange }) {
     );
   };
 
-  /* -----------------------------------------
-         Leftover Cards (not in melds)
-  -----------------------------------------*/
-  const placedIds = new Set(
-    melds.flat().map((c) => `${c.rank}${c.suit}${c.joker}`)
-  );
-
-  const leftover = hand.filter(
-    (c) => !placedIds.has(`${c.rank}${c.suit}${c.joker}`)
-  );
-
-  /* -----------------------------------------
-          FINAL RENDER
-  -----------------------------------------*/
+  /* --------------------------------------------------
+      FINAL UI
+  ---------------------------------------------------*/
   return (
     <div className="meld-board-container">
       <div className="meld-row">
@@ -191,12 +203,12 @@ export default function MeldBoard({ tableId, userId, hand, onMeldChange }) {
       <div className="meld-row">{renderMeld(melds[3], 3)}</div>
 
       <div className="leftover-box">
-        <div className="left-head">
-          Leftover / 4-card sequence
+        <div className="leftover-header">
+          Leftover / 4-Card Seq
           <button
-            className="seq-lock-btn"
-            disabled={sequenceLocked}
+            className={`seq-lock-btn ${sequenceLocked ? "on" : ""}`}
             onClick={lockPureSeq}
+            disabled={sequenceLocked}
           >
             {sequenceLocked ? "🟢 Pure Locked" : "🟩 Lock Pure Seq"}
           </button>
@@ -207,11 +219,14 @@ export default function MeldBoard({ tableId, userId, hand, onMeldChange }) {
             <PlayingCard
               key={i}
               card={c}
+              draggable={true}
               small
-              draggable
               onDragStart={(e) =>
                 e.dataTransfer.setData("card", JSON.stringify(c))
               }
+              onTouchStart={(e) => {
+                e.target.dataset.card = JSON.stringify(c);
+              }}
             />
           ))}
         </div>
