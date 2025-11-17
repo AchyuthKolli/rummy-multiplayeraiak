@@ -1,4 +1,4 @@
-/* Table.jsx (patched) */
+/* Table.jsx (patched & ready) */
 import {
   socket,
   joinRoom,
@@ -14,7 +14,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import apiclient from "../apiclient";
 import type { GetTableInfoParams, TableInfoResponse, StartGameRequest, GetRoundMeParams, RoundMeResponse, DrawRequest, DiscardRequest, DiscardCard, DeclareRequest, ScoreboardResponse, RoundScoreboardParams, GetRevealedHandsParams, RevealedHandsResponse, LockSequenceRequest, GrantSpectateRequest } from "../apiclient/data-contracts";
-import { Copy, Check, Crown, User2, Play, ArrowDown, Trash2, Trophy, X, ChevronDown, ChevronUp, LogOut, Mic, MicOff, UserX, Eye } from "lucide-react";
+import { Copy, Check, Crown, User2, Play, Trophy, X, ChevronDown, ChevronUp, LogOut, Mic, MicOff, UserX } from "lucide-react";
 import { toast } from "sonner";
 // ✅ ALL RUMMY COMPONENTS NOW UNDER games/rummy/
 import { HandStrip } from "../games/rummy/components/HandStrip";
@@ -469,11 +469,10 @@ onChatMessage((msg) => {
     socket.off("declare_made");
     socket.off("voice_status");
     socket.off("spectate_update");
+    socket.off("chat_message"); // <-- ensure chat listener removed
   };
 
 }, [tableId, user]);
-
-
 
   // Get cards that are placed in slots (not in hand anymore)
   const placedCards = useMemo(() => {
