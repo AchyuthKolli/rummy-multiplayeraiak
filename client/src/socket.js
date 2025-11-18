@@ -1,16 +1,24 @@
 // client/src/socket.js
 import { io } from "socket.io-client";
 
-const SOCKET_URL = "http://localhost:3001";
+// -------------------------------
+// AUTO SWITCH LOCAL ↔ PRODUCTION
+// -------------------------------
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL?.trim() ||
+  window.location.origin.replace(/^http/, "ws"); // fallback for deployed frontend
 
-// Connect socket with auto-reconnect
+console.log("🔌 Connecting to Socket:", SOCKET_URL);
+
+// Create global socket instance
 export const socket = io(SOCKET_URL, {
   transports: ["websocket"],
   reconnection: true,
-  reconnectionAttempts: 10,
+  reconnectionAttempts: 20,
   reconnectionDelay: 500,
 });
 
+// Connection logs
 socket.on("connect", () => {
   console.log("🟢 Socket connected:", socket.id);
 });
@@ -19,12 +27,16 @@ socket.on("disconnect", () => {
   console.log("🔴 Socket disconnected");
 });
 
-// ====== SUBSCRIBE TO ROOM ======
+// -------------------------------
+//   ROOM JOIN
+// -------------------------------
 export const joinRoom = (tableId, userId) => {
   socket.emit("join_room", { tableId, userId });
 };
 
-// ====== LISTENERS ======
+// -------------------------------
+//   LISTENERS
+// -------------------------------
 export const onGameUpdate = (callback) => {
   socket.on("game_update", callback);
 };
@@ -45,7 +57,9 @@ export const onSpectateUpdate = (callback) => {
   socket.on("spectate_update", callback);
 };
 
-// ====== SENDERS ======
+// -------------------------------
+//   SENDERS
+// -------------------------------
 export const sendChatMsg = (tableId, userId, message) => {
   socket.emit("chat_message", { tableId, userId, message });
 };
