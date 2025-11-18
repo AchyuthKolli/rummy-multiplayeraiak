@@ -1,4 +1,7 @@
-/* Table.jsx (Mode-A, socket-driven, ready to paste) */
+/* client/src/pages/Table.jsx
+   Final plain-JSX Table component (no TypeScript). Ready to paste.
+*/
+
 import {
   socket,
   joinRoom,
@@ -12,20 +15,6 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import apiclient from "../apiclient";
-import type {
-  GetTableInfoParams,
-  TableInfoResponse,
-  StartGameRequest,
-  GetRoundMeParams,
-  RoundMeResponse,
-  DrawRequest,
-  DiscardRequest,
-  DiscardCard,
-  DeclareRequest,
-  ScoreboardResponse,
-  LockSequenceRequest,
-  GrantSpectateRequest,
-} from "../apiclient/data-contracts";
 import {
   Copy,
   Check,
@@ -65,10 +54,10 @@ import { initCursorSpark } from "../utils/cursor-spark"; // sparkles
 
 // ui
 import { Button } from "@/components/ui/button";
-import { useUser } from "@stackframe/react";
+import { useUser } from "@stackframe/react"; // keep as-is if you have this provider
 
-// CardBack component with red checkered pattern
-const CardBack = ({ className = "" }: { className?: string }) => (
+// Simple CardBack
+const CardBack = ({ className = "" }) => (
   <div className={`relative bg-white rounded-lg border-2 border-gray-300 shadow-lg ${className}`}>
     <div className="absolute inset-0 rounded-lg overflow-hidden">
       <div
@@ -81,21 +70,7 @@ const CardBack = ({ className = "" }: { className?: string }) => (
   </div>
 );
 
-/* ----------------- MeldSlotBox & LeftoverSlotBox (unchanged UI, safer logic) ----------------- */
-
-interface MeldSlotBoxProps {
-  title: string;
-  slots: (RoundMeResponse["hand"][number] | null)[];
-  setSlots: (slots: (RoundMeResponse["hand"][number] | null)[]) => void;
-  myRound: RoundMeResponse | null;
-  setMyRound: (round: RoundMeResponse) => void;
-  isLocked?: boolean;
-  onToggleLock?: () => void;
-  tableId: string;
-  onRefresh: () => void;
-  hideLockButton?: boolean;
-  gameMode?: string;
-}
+/* ----------------- MeldSlotBox & LeftoverSlotBox (no TS) ----------------- */
 
 const MeldSlotBox = ({
   title,
@@ -109,12 +84,12 @@ const MeldSlotBox = ({
   onRefresh,
   hideLockButton,
   gameMode,
-}: MeldSlotBoxProps) => {
+}) => {
   const [locking, setLocking] = useState(false);
   const [showRevealModal, setShowRevealModal] = useState(false);
-  const [revealedRank, setRevealedRank] = useState<string | null>(null);
+  const [revealedRank, setRevealedRank] = useState(null);
 
-  const handleSlotDrop = (slotIndex: number, cardData: string) => {
+  const handleSlotDrop = (slotIndex, cardData) => {
     if (!myRound || isLocked) {
       if (isLocked) toast.error("Unlock meld first to modify");
       return;
@@ -134,7 +109,7 @@ const MeldSlotBox = ({
     }
   };
 
-  const handleSlotClick = (slotIndex: number) => {
+  const handleSlotClick = (slotIndex) => {
     if (!myRound || slots[slotIndex] === null || isLocked) {
       if (isLocked) toast.error("Unlock meld first to modify");
       return;
@@ -153,8 +128,8 @@ const MeldSlotBox = ({
     }
     setLocking(true);
     try {
-      const meldCards = cards.map((card) => ({ rank: card!.rank, suit: card!.suit || null }));
-      const body: LockSequenceRequest = { table_id: tableId, meld: meldCards };
+      const meldCards = cards.map((card) => ({ rank: card.rank, suit: card.suit || null }));
+      const body = { table_id: tableId, meld: meldCards };
       const res = await apiclient.lock_sequence(body);
       const data = await res.json();
       if (data.success) {
@@ -168,7 +143,7 @@ const MeldSlotBox = ({
       } else {
         toast.error(data.message || "Lock failed");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Lock error", err);
       toast.error("Failed to lock sequence");
     } finally {
@@ -242,18 +217,6 @@ const MeldSlotBox = ({
   );
 };
 
-interface LeftoverSlotBoxProps {
-  slots: (RoundMeResponse["hand"][number] | null)[];
-  setSlots: (slots: (RoundMeResponse["hand"][number] | null)[]) => void;
-  myRound: RoundMeResponse | null;
-  setMyRound: (round: RoundMeResponse) => void;
-  isLocked?: boolean;
-  onToggleLock?: () => void;
-  tableId: string;
-  onRefresh: () => void;
-  gameMode?: string;
-}
-
 const LeftoverSlotBox = ({
   slots,
   setSlots,
@@ -264,12 +227,12 @@ const LeftoverSlotBox = ({
   tableId,
   onRefresh,
   gameMode,
-}: LeftoverSlotBoxProps) => {
+}) => {
   const [locking, setLocking] = useState(false);
   const [showRevealModal, setShowRevealModal] = useState(false);
-  const [revealedRank, setRevealedRank] = useState<string | null>(null);
+  const [revealedRank, setRevealedRank] = useState(null);
 
-  const handleSlotDrop = (slotIndex: number, cardData: string) => {
+  const handleSlotDrop = (slotIndex, cardData) => {
     if (!myRound || isLocked) return;
     try {
       const card = JSON.parse(cardData);
@@ -286,7 +249,7 @@ const LeftoverSlotBox = ({
     }
   };
 
-  const handleSlotClick = (slotIndex: number) => {
+  const handleSlotClick = (slotIndex) => {
     if (!myRound || slots[slotIndex] === null) return;
     const newSlots = [...slots];
     newSlots[slotIndex] = null;
@@ -302,8 +265,8 @@ const LeftoverSlotBox = ({
     }
     setLocking(true);
     try {
-      const meldCards = cards.map((card) => ({ rank: card!.rank, suit: card!.suit || null }));
-      const body: LockSequenceRequest = { table_id: tableId, meld: meldCards };
+      const meldCards = cards.map((card) => ({ rank: card.rank, suit: card.suit || null }));
+      const body = { table_id: tableId, meld: meldCards };
       const res = await apiclient.lock_sequence(body);
       const data = await res.json();
       if (data.success) {
@@ -317,7 +280,7 @@ const LeftoverSlotBox = ({
       } else {
         toast.error(data.message || "Lock failed");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Lock error", err);
       toast.error("Failed to lock sequence");
     } finally {
@@ -399,31 +362,31 @@ export default function Table() {
 
   // State
   const [loading, setLoading] = useState(true);
-  const [info, setInfo] = useState<TableInfoResponse | null>(null);
-  const [myRound, setMyRound] = useState<RoundMeResponse | null>(null);
+  const [info, setInfo] = useState(null);
+  const [myRound, setMyRound] = useState(null);
   const [copied, setCopied] = useState(false);
   const [acting, setActing] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [scoreboard, setScoreboard] = useState<ScoreboardResponse | null>(null);
+  const [scoreboard, setScoreboard] = useState(null);
   const [showScoreboard, setShowScoreboard] = useState(false);
   const [showWildJokerReveal, setShowWildJokerReveal] = useState(false);
-  const [revealedWildJoker, setRevealedWildJoker] = useState<string | null>(null);
-  const [roundHistory, setRoundHistory] = useState<any[]>([]);
-  const [tableColor, setTableColor] = useState<"green" | "red-brown">("green");
+  const [revealedWildJoker, setRevealedWildJoker] = useState(null);
+  const [roundHistory, setRoundHistory] = useState([]);
+  const [tableColor, setTableColor] = useState("green");
   const [voiceMuted, setVoiceMuted] = useState(false);
   const [droppingGame, setDroppingGame] = useState(false);
   const [spectateRequested, setSpectateRequested] = useState(false);
-  const [spectateRequests, setSpectateRequests] = useState<string[]>([]);
+  const [spectateRequests, setSpectateRequests] = useState([]);
   const [showScoreboardModal, setShowScoreboardModal] = useState(false);
   const [showScoreboardPanel, setShowScoreboardPanel] = useState(false);
-  const [revealedHands, setRevealedHands] = useState<any>(null);
+  const [revealedHands, setRevealedHands] = useState(null);
 
   // keep previous players list to detect leaves
-  const prevPlayersRef = useRef<string[] | null>(null);
+  const prevPlayersRef = useRef(null);
 
   // init cursor sparkles once when Table mounts
   useEffect(() => {
-    initCursorSpark(); // safe - only enables simple effect
+    initCursorSpark();
   }, []);
 
   // DEBUG: Monitor tableId changes and URL
@@ -434,24 +397,24 @@ export default function Table() {
     }
   }, [tableId, sp]);
 
-  const [selectedCard, setSelectedCard] = useState<{ rank: string; suit: string | null; joker: boolean } | null>(null);
-  const [lastDrawnCard, setLastDrawnCard] = useState<{ rank: string; suit: string | null } | null>(null);
+  const [selectedCard, setSelectedCard] = useState(null);
+  const [lastDrawnCard, setLastDrawnCard] = useState(null);
   const [hasDrawn, setHasDrawn] = useState(false);
-  const [pureSeq, setPureSeq] = useState<{ rank: string; suit: string | null; joker: boolean }[]>([]);
-  const [meld1, setMeld1] = useState<(RoundMeResponse["hand"][number] | null)[]>([null, null, null]);
-  const [meld2, setMeld2] = useState<(RoundMeResponse["hand"][number] | null)[]>([null, null, null]);
-  const [meld3, setMeld3] = useState<(RoundMeResponse["hand"][number] | null)[]>([null, null, null]);
-  const [leftover, setLeftover] = useState<(RoundMeResponse["hand"][number] | null)[]>([null, null, null, null]);
-  const [prevRoundFinished, setPrevRoundFinished] = useState<string | null>(null);
+  const [pureSeq, setPureSeq] = useState([]);
+  const [meld1, setMeld1] = useState([null, null, null]);
+  const [meld2, setMeld2] = useState([null, null, null]);
+  const [meld3, setMeld3] = useState([null, null, null]);
+  const [leftover, setLeftover] = useState([null, null, null, null]);
+  const [prevRoundFinished, setPrevRoundFinished] = useState(null);
   const [showPointsTable, setShowPointsTable] = useState(true);
 
   // Table Info box state
   const [tableInfoVisible, setTableInfoVisible] = useState(true);
   const [tableInfoMinimized, setTableInfoMinimized] = useState(false);
-  const [activeTab, setActiveTab] = useState<"info" | "history" | "spectate">("info");
+  const [activeTab, setActiveTab] = useState("info");
 
   // Meld lock state
-  const [meldLocks, setMeldLocks] = useState<{ meld1: boolean; meld2: boolean; meld3: boolean; leftover: boolean }>({
+  const [meldLocks, setMeldLocks] = useState({
     meld1: false,
     meld2: false,
     meld3: false,
@@ -465,7 +428,8 @@ export default function Table() {
     const saved = localStorage.getItem(storageKey);
     if (saved) {
       try {
-        const { meld1: m1, meld2: m2, meld3: m3, leftover: lo, locks } = JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        const { meld1: m1, meld2: m2, meld3: m3, leftover: lo, locks } = parsed;
         if (locks?.meld1) setMeld1(m1);
         if (locks?.meld2) setMeld2(m2);
         if (locks?.meld3) setMeld3(m3);
@@ -485,7 +449,7 @@ export default function Table() {
     localStorage.setItem(storageKey, JSON.stringify(data));
   }, [tableId, meld1, meld2, meld3, leftover, meldLocks]);
 
-  const toggleMeldLock = (meldName: "meld1" | "meld2" | "meld3" | "leftover") => {
+  const toggleMeldLock = (meldName) => {
     setMeldLocks((prev) => ({ ...prev, [meldName]: !prev[meldName] }));
     toast.success(`${meldName} ${!meldLocks[meldName] ? "locked" : "unlocked"}`);
   };
@@ -529,7 +493,6 @@ export default function Table() {
     });
 
     onChatMessage((msg) => {
-      // keep for debug
       console.log("💬 Chat:", msg);
     });
 
@@ -545,19 +508,19 @@ export default function Table() {
 
   // Get cards that are placed in slots (not in hand anymore)
   const placedCards = useMemo(() => {
-    const placed = [...meld1, ...meld2, ...meld3, ...leftover].filter((c) => c !== null) as RoundMeResponse["hand"];
+    const placed = [...meld1, ...meld2, ...meld3, ...leftover].filter((c) => c !== null);
     return placed;
   }, [meld1, meld2, meld3, leftover]);
 
   // Filter hand to exclude placed cards - FIX for duplicate cards
   const availableHand = useMemo(() => {
     if (!myRound) return [];
-    const placedCounts = new Map<string, number>();
+    const placedCounts = new Map();
     placedCards.forEach((card) => {
       const key = `${card.rank}-${card.suit || "null"}`;
       placedCounts.set(key, (placedCounts.get(key) || 0) + 1);
     });
-    const seenCounts = new Map<string, number>();
+    const seenCounts = new Map();
     return myRound.hand.filter((handCard) => {
       const key = `${handCard.rank}-${handCard.suit || "null"}`;
       const placedCount = placedCounts.get(key) || 0;
@@ -571,7 +534,7 @@ export default function Table() {
   }, [myRound, placedCards]);
 
   // Helper to determine number of decks based on player count
-  const determineDecksForPlayers = (playerCount: number) => {
+  const determineDecksForPlayers = (playerCount) => {
     if (playerCount <= 2) return 1;
     if (playerCount === 3 || playerCount === 4) return 2;
     return 3; // 5 or 6 players
@@ -583,7 +546,7 @@ export default function Table() {
       return;
     }
     try {
-      const query: GetTableInfoParams = { table_id: tableId };
+      const query = { table_id: tableId };
       const res = await apiclient.get_table_info(query);
       if (!res.ok) {
         console.error("❌ get_table_info failed with status:", res.status);
@@ -596,7 +559,7 @@ export default function Table() {
       // detect player leaves (compare previous players)
       try {
         const prev = prevPlayersRef.current;
-        const currentIds = (data.players || []).map((p: any) => p.user_id);
+        const currentIds = (data.players || []).map((p) => p.user_id);
         if (prev && prev.length > currentIds.length) {
           const leftIds = prev.filter((x) => !currentIds.includes(x));
           leftIds.forEach(async (uid) => {
@@ -627,7 +590,7 @@ export default function Table() {
       }
 
       if (data.status === "playing") {
-        const r: GetRoundMeParams = { table_id: tableId };
+        const r = { table_id: tableId };
         const rr = await apiclient.get_round_me(r);
         if (!rr.ok) {
           console.error("❌ get_round_me failed with status:", rr.status);
@@ -706,8 +669,8 @@ export default function Table() {
     setStarting(true);
     try {
       const deck_count = determineDecksForPlayers(info.players.length);
-      const body: any = { table_id: tableId, deck_count };
-      const res = await apiclient.start_game(body as StartGameRequest);
+      const body = { table_id: tableId, deck_count };
+      const res = await apiclient.start_game(body);
       if (!res.ok) {
         const errorText = await res.text();
         console.error("Start game failed:", errorText);
@@ -717,7 +680,7 @@ export default function Table() {
       const data = await res.json();
       toast.success(`Round #${data.number} started`);
       await refresh();
-    } catch (e: any) {
+    } catch (e) {
       console.error("Start game error:", e);
       toast.error(e?.message || "Failed to start game");
     } finally {
@@ -729,7 +692,7 @@ export default function Table() {
     if (!tableId || !isMyTurn || hasDrawn) return;
     setActing(true);
     try {
-      const body: DrawRequest = { table_id: tableId };
+      const body = { table_id: tableId };
       const res = await apiclient.draw_stock(body);
       if (!res.ok) {
         const errText = await res.text().catch(() => "draw_stock failed");
@@ -741,7 +704,7 @@ export default function Table() {
       setMyRound(data);
       try {
         const prevHand = myRound?.hand || [];
-        const newCard = (data.hand || []).find((card: any) => !prevHand.some((c: any) => c.rank === card.rank && c.suit === card.suit));
+        const newCard = (data.hand || []).find((card) => !prevHand.some((c) => c.rank === card.rank && c.suit === card.suit));
         if (newCard) {
           setLastDrawnCard({ rank: newCard.rank, suit: newCard.suit });
         }
@@ -750,7 +713,7 @@ export default function Table() {
       toast.success("Drew from stock");
       socket.emit("game_update", { tableId });
       setTimeout(() => refresh(), 120);
-    } catch (e: any) {
+    } catch (e) {
       console.error("draw stock error", e);
       toast.error("Failed to draw from stock");
     } finally {
@@ -762,7 +725,7 @@ export default function Table() {
     if (!tableId || !isMyTurn || hasDrawn) return;
     setActing(true);
     try {
-      const body: DrawRequest = { table_id: tableId };
+      const body = { table_id: tableId };
       const res = await apiclient.draw_discard(body);
       if (!res.ok) {
         const errText = await res.text().catch(() => "draw_discard failed");
@@ -774,7 +737,7 @@ export default function Table() {
       setMyRound(data);
       try {
         const prevHand = myRound?.hand || [];
-        const newCard = (data.hand || []).find((card: any) => !prevHand.some((c: any) => c.rank === card.rank && c.suit === card.suit));
+        const newCard = (data.hand || []).find((card) => !prevHand.some((c) => c.rank === card.rank && c.suit === card.suit));
         if (newCard) {
           setLastDrawnCard({ rank: newCard.rank, suit: newCard.suit });
         } else if (myRound?.discard_top) {
@@ -791,7 +754,7 @@ export default function Table() {
       toast.success("Drew from discard pile");
       socket.emit("game_update", { tableId });
       setTimeout(() => refresh(), 120);
-    } catch (e: any) {
+    } catch (e) {
       console.error("draw discard error", e);
       toast.error("Failed to draw from discard");
     } finally {
@@ -803,7 +766,7 @@ export default function Table() {
     if (!tableId || !selectedCard || !hasDrawn) return;
     setActing(true);
     try {
-      const body: DiscardRequest = { table_id: tableId, card: selectedCard };
+      const body = { table_id: tableId, card: selectedCard };
       const res = await apiclient.discard_card(body);
       if (!res.ok) {
         const errText = await res.text().catch(() => "discard failed");
@@ -824,7 +787,7 @@ export default function Table() {
         setMyRound(data);
       }
       await refresh();
-    } catch (e: any) {
+    } catch (e) {
       console.error("discard error", e);
       toast.error("Failed to discard card");
     } finally {
@@ -834,10 +797,10 @@ export default function Table() {
 
   const fetchRevealedHands = async () => {
     console.log("📊 Fetching revealed hands...");
-    let lastError: any = null;
+    let lastError = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const resp = await apiclient.get_revealed_hands({ table_id: tableId! });
+        const resp = await apiclient.get_revealed_hands({ table_id: tableId });
         if (!resp.ok) {
           const errorText = await resp.text();
           lastError = { status: resp.status, message: errorText };
@@ -854,7 +817,7 @@ export default function Table() {
         setShowScoreboardModal(true);
         setShowScoreboardPanel(true);
         return data;
-      } catch (error: any) {
+      } catch (error) {
         console.error(`❌ Error fetching revealed hands (attempt ${attempt}/3):`, error);
         lastError = error;
         if (attempt < 3) {
@@ -911,20 +874,20 @@ export default function Table() {
       return;
     }
 
-    const groups: RoundMeResponse["hand"][] = [];
-    const meld1Cards = meld1?.filter((c) => c !== null) as RoundMeResponse["hand"];
+    const groups = [];
+    const meld1Cards = meld1?.filter((c) => c !== null) || [];
     if (meld1Cards.length > 0) groups.push(meld1Cards);
-    const meld2Cards = meld2?.filter((c) => c !== null) as RoundMeResponse["hand"];
+    const meld2Cards = meld2?.filter((c) => c !== null) || [];
     if (meld2Cards.length > 0) groups.push(meld2Cards);
-    const meld3Cards = meld3?.filter((c) => c !== null) as RoundMeResponse["hand"];
+    const meld3Cards = meld3?.filter((c) => c !== null) || [];
     if (meld3Cards.length > 0) groups.push(meld3Cards);
-    const leftoverCards = leftover?.filter((c) => c !== null) as RoundMeResponse["hand"];
+    const leftoverCards = leftover?.filter((c) => c !== null) || [];
     if (leftoverCards.length > 0) groups.push(leftoverCards);
 
     setActing(true);
     try {
       const discardGroups = groups.map((group) => group.map((card) => ({ rank: card.rank, suit: card.suit, joker: card.joker })));
-      const body: DeclareRequest = { table_id: tableId, groups: discardGroups };
+      const body = { table_id: tableId, groups: discardGroups };
       const res = await apiclient.declare(body);
       if (res.ok) {
         const data = await res.json();
@@ -947,22 +910,10 @@ export default function Table() {
         }
         toast.error(`❌ ${errorMessage}`, { duration: 5000 });
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Declare exception", error);
       let errorMsg = "Network error";
-      if (error instanceof Response) {
-        try {
-          const errorData = await error.json();
-          errorMsg = errorData.detail || errorData.message || "Failed to declare";
-        } catch {
-          try {
-            const errorText = await error.text();
-            errorMsg = errorText || "Failed to declare";
-          } catch {
-            errorMsg = "Failed to declare";
-          }
-        }
-      } else if (error?.message) errorMsg = error.message;
+      if (error?.message) errorMsg = error.message;
       else if (typeof error === "string") errorMsg = error;
       toast.error(`❌ Failed to declare: ${errorMsg}`, { duration: 5000 });
     } finally {
@@ -978,16 +929,16 @@ export default function Table() {
       const firstPlayerId = info.first_player_id || info.active_user_id || info.host_user_id;
       let nextFirstPlayerId = firstPlayerId;
       if (firstPlayerId && players.length > 0) {
-        const idx = players.findIndex((p: any) => p.user_id === firstPlayerId);
+        const idx = players.findIndex((p) => p.user_id === firstPlayerId);
         if (idx >= 0) {
           nextFirstPlayerId = players[(idx + 1) % players.length].user_id;
         } else {
-          const hostIdx = players.findIndex((p: any) => p.user_id === info.host_user_id);
+          const hostIdx = players.findIndex((p) => p.user_id === info.host_user_id);
           nextFirstPlayerId = players[(hostIdx + 1) % players.length].user_id;
         }
       }
 
-      const body: any = { table_id: tableId, first_player_id: nextFirstPlayerId };
+      const body = { table_id: tableId, first_player_id: nextFirstPlayerId };
       const res = await apiclient.start_next_round(body);
       if (!res.ok) {
         const errorText = await res.text().catch(() => "start_next_round failed");
@@ -998,7 +949,7 @@ export default function Table() {
       const data = await res.json();
       toast.success(`Round #${data.number} started!`);
       await refresh();
-    } catch (e: any) {
+    } catch (e) {
       console.error("start next round error", e);
       toast.error(e?.message || "Failed to start next round");
     } finally {
@@ -1031,7 +982,7 @@ export default function Table() {
       await res.json();
       toast.success("You have dropped from the game (20 point penalty)");
       await refresh();
-    } catch (e: any) {
+    } catch (e) {
       console.error("drop game error", e);
       toast.error(e?.message || "Failed to drop game");
     } finally {
@@ -1040,28 +991,28 @@ export default function Table() {
   };
 
   // Spectate handlers
-  const requestSpectate = async (playerId: string) => {
+  const requestSpectate = async (playerId) => {
     if (!tableId || spectateRequested) return;
     setSpectateRequested(true);
     try {
       const body = { table_id: tableId, player_id: playerId };
       await apiclient.request_spectate(body);
       toast.success("Spectate request sent");
-    } catch (e: any) {
+    } catch (e) {
       toast.error(e?.message || "Failed to request spectate");
     } finally {
       setSpectateRequested(false);
     }
   };
 
-  const grantSpectate = async (spectatorId: string) => {
+  const grantSpectate = async (spectatorId) => {
     if (!tableId) return;
     try {
-      const body: GrantSpectateRequest = { table_id: tableId, spectator_id: spectatorId, granted: true };
+      const body = { table_id: tableId, spectator_id: spectatorId, granted: true };
       await apiclient.grant_spectate(body);
       setSpectateRequests((prev) => prev.filter((id) => id !== spectatorId));
       toast.success("Spectate access granted");
-    } catch (e: any) {
+    } catch (e) {
       toast.error(e?.message || "Failed to grant spectate");
     }
   };
@@ -1074,23 +1025,23 @@ export default function Table() {
       await apiclient.mute_player(body);
       setVoiceMuted(!voiceMuted);
       toast.success(voiceMuted ? "Unmuted" : "Muted");
-    } catch (e: any) {
+    } catch (e) {
       toast.error(e?.message || "Failed to toggle mute");
     }
   };
 
-  const onCardSelect = (card: RoundMeResponse["hand"][number], idx: number) => {
+  const onCardSelect = (card, idx) => {
     if (!hasDrawn) return;
     setSelectedCard({ rank: card.rank, suit: card.suit || null, joker: card.joker || false });
   };
 
-  const onReorderHand = (reorderedHand: RoundMeResponse["hand"]) => {
+  const onReorderHand = (reorderedHand) => {
     if (myRound) {
       setMyRound({ ...myRound, hand: reorderedHand });
     }
   };
 
-  const onSelectCard = (card: DiscardCard) => {
+  const onSelectCard = (card) => {
     if (!hasDrawn) return;
     setSelectedCard(card);
   };
@@ -1219,10 +1170,7 @@ export default function Table() {
                     </div>
                   </div>
 
-                  {/* --- keep remaining UI identical to your provided file --- */}
-                  {/* For brevity in this version, everything below retains the same structure and classes */}
-                  {/* (casino table, meld area, hand strip, scoreboard modal, side panels) */}
-                  {/* The code continues with the same parts you provided earlier - no UI changes were made. */}
+                  {/* --- existing UI continues unchanged --- */}
 
                   {/* Scoreboard Modal */}
                   <ScoreboardModal
@@ -1255,7 +1203,7 @@ export default function Table() {
                         {/* Round Scores */}
                         <div className="mb-6 p-4 bg-gray-800 rounded-lg border border-yellow-600">
                           <h3 className="text-lg font-semibold text-yellow-400 mb-3">Scores</h3>
-                          {Object.entries(revealedHands.scores || {}).map(([uid, score]: [string, any]) => {
+                          {Object.entries(revealedHands.scores || {}).map(([uid, score]) => {
                             const playerName = revealedHands.player_names?.[uid] || "Unknown";
                             return (
                               <div key={uid} className="flex justify-between py-2 border-b border-gray-700 last:border-0">
@@ -1268,7 +1216,7 @@ export default function Table() {
 
                         {/* All Players' Hands */}
                         <div className="space-y-6">
-                          {Object.entries(revealedHands.organized_melds || {}).map(([uid, melds]: [string, any]) => {
+                          {Object.entries(revealedHands.organized_melds || {}).map(([uid, melds]) => {
                             const playerName = revealedHands.player_names?.[uid] || "Unknown";
                             const playerScore = revealedHands.scores?.[uid] || 0;
                             const isWinner = playerScore === 0;
@@ -1285,7 +1233,7 @@ export default function Table() {
 
                                 {melds && melds.length > 0 ? (
                                   <div className="space-y-3">
-                                    {melds.map((meld: any, idx: number) => {
+                                    {melds.map((meld, idx) => {
                                       const meldType = meld.type || "unknown";
                                       let bgColor = "bg-gray-700";
                                       let borderColor = "border-gray-600";
@@ -1309,7 +1257,7 @@ export default function Table() {
                                         <div key={idx} className={`p-3 rounded border ${bgColor} ${borderColor}`}>
                                           <div className="text-xs text-gray-400 mb-2">{label}</div>
                                           <div className="flex flex-wrap gap-2">
-                                            {(meld.cards || []).map((card: any, cardIdx: number) => (
+                                            {(meld.cards || []).map((card, cardIdx) => (
                                               <div key={cardIdx} className="text-sm font-mono bg-white text-gray-900 px-2 py-1 rounded">
                                                 {card.name || card.code || "??"}
                                               </div>
@@ -1353,7 +1301,7 @@ export default function Table() {
               )}
             </div>
 
-            {/* Sidebar - Table Info with Round History (unchanged UI) */}
+            {/* Sidebar - Table Info with Round History */}
             {tableInfoVisible && (
               <div className={`bg-card border border-border rounded-lg shadow-lg ${tableInfoMinimized ? "w-auto" : "order-1 lg:order-2"}`}>
                 <div className="flex items-center justify-between p-3 bg-muted/30 border-b border-border rounded-t-lg">
@@ -1421,7 +1369,7 @@ export default function Table() {
                           )}
                         </div>
 
-                        {/* Round History & Points Table - unchanged rendering */}
+                        {/* Round History & Points Table */}
                         {roundHistory.length > 0 && (
                           <div className="border-t border-border pt-3">
                             <h4 className="text-sm font-semibold text-foreground mb-2">Round History</h4>
@@ -1478,7 +1426,7 @@ export default function Table() {
             )}
           </div>
 
-          {/* ChatSidebar and VoicePanel same as before */}
+          {/* ChatSidebar and VoicePanel */}
           {user && info && tableId && (
             <ChatSidebar tableId={tableId} currentUserId={user.id} players={info.players.map((p) => ({ userId: p.user_id, displayName: p.display_name || p.user_id.slice(0, 6) }))} />
           )}
