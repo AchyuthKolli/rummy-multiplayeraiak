@@ -53,7 +53,7 @@ import { parseCardCode } from "../utils/cardCodeUtils";
 import { initCursorSpark } from "../utils/cursor-spark"; // sparkles
 
 // ui
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/Button";
 import { useUser } from "@stackframe/react"; // keep as-is if you have this provider
 
 // Simple CardBack
