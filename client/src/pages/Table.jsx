@@ -33,20 +33,19 @@ import {
 import { toast } from "sonner";
 
 // ✅ ALL RUMMY COMPONENTS NOW UNDER games/rummy/
-import { HandStrip } from "../games/rummy/components/HandStrip";
-import { TableDiagram } from "../games/rummy/components/TableDiagram";
-import { CasinoTable3D } from "../games/rummy/components/CasinoTable3D";
-import { PlayerProfile } from "../games/rummy/components/PlayerProfile";
-import { PlayingCard } from "../games/rummy/components/PlayingCard";
-import { GameRules } from "../games/rummy/components/GameRules";
-import { ScoreboardModal } from "../games/rummy/components/ScoreboardModal";
-import { WildJokerRevealModal } from "../games/rummy/components/WildJokerRevealModal";
-import { PointsTable } from "../games/rummy/components/PointsTable";
-import SpectateControls from "../games/rummy/components/SpectateControls";
-import HistoryTable from "../games/rummy/components/HistoryTable";
-
-import ChatSidebar from "../games/rummy/components/ChatSidebar";
-import VoicePanel from "../games/rummy/components/VoicePanel";
+import HandStrip from "../games/rummy/components/HandStrip.jsx";
+import TableDiagram from "../games/rummy/components/TableDiagram.jsx";
+import CasinoTable3D from "../games/rummy/components/CasinoTable3D.jsx";
+import PlayerProfile from "../games/rummy/components/PlayerProfile.jsx";
+import PlayingCard from "../games/rummy/components/PlayingCard.jsx";
+import GameRules from "../games/rummy/components/GameRules.jsx";
+import ScoreboardModal from "../games/rummy/components/ScoreboardModal.jsx";
+import WildJokerRevealModal from "../games/rummy/components/WildJokerRevealModal.jsx";
+import PointsTable from "../games/rummy/components/PointsTable.jsx";
+import SpectateControls from "../games/rummy/components/SpectateControls.jsx";
+import HistoryTable from "../games/rummy/components/HistoryTable.jsx";
+import ChatSidebar from "../games/rummy/components/ChatSidebar.jsx";
+import VoicePanel from "../games/rummy/components/VoicePanel.jsx";
 
 // utilities
 import { parseCardCode } from "../utils/cardCodeUtils";
